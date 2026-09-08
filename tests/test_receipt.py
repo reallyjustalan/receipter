@@ -151,6 +151,38 @@ class ReceiptAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code,409)
             send.assert_awaited_once()
 
+    async def test_output_inspection_matches_sent_bytes_and_never_touches_usb(self):
+        import hashlib
+        proof = (await self.preview()).json()
+        for cut, feed, copies in [(True,8,1),(True,10,3),(False,0,2)]:
+            form = {'snapshot':proof['token'],'cut':str(cut).lower(),'feed_lines':feed,'copies':copies}
+            with (patch.object(app,'_token',side_effect=AssertionError('Inspection must work while printer is stopped')),
+                  patch.object(app,'_send',new_callable=AsyncMock) as send):
+                response = await self.client.post('/api/receipt-output',data=form)
+                self.assertEqual(response.status_code,200,response.text)
+                send.assert_not_called()
+            output = response.json()
+            raw = b64decode(output['raw_base64'])
+            self.assertEqual(output['bytes'],len(raw))
+            self.assertEqual(output['sha256'],hashlib.sha256(raw).hexdigest())
+            self.assertEqual(output['state'],'prepared_not_sent')
+            self.assertIn(proof['token'],app._snapshots)
+            with patch.object(app,'_send',new_callable=AsyncMock,return_value={}) as send:
+                await app._print_prepared(app._snapshots[proof['token']][1],1,16,1,cut=cut,feed_lines=feed,copies=copies)
+                self.assertEqual(raw,b''.join(send.call_args.args[0]))
+                self.assertEqual(output['parts'],len(send.call_args.args[0]))
+
+    async def test_output_inspection_rejects_expired_or_invalid_settings(self):
+        proof = (await self.preview()).json()
+        for fields in [{'snapshot':'missing'}, {'snapshot':proof['token'],'feed_lines':2},
+                       {'snapshot':proof['token'],'copies':11}]:
+            response = await self.client.post('/api/receipt-output',data=fields)
+            self.assertIn(response.status_code,(400,409,422))
+        self.assertIn(proof['token'],app._snapshots)
+        with patch.object(app,'monotonic',return_value=app.monotonic()+1801):
+            response = await self.client.post('/api/receipt-output',data={'snapshot':proof['token']})
+            self.assertEqual(response.status_code,409)
+
     async def test_multiple_copies_use_one_snapshot_and_one_send(self):
         from receipter.escpos import encode_column_image_parts, PARTIAL_CUT
         proof = (await self.preview()).json()
@@ -225,7 +257,7 @@ class ReceiptAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_frozen_studio_assets(self):
         with patch('pathlib.Path.read_text',side_effect=AssertionError('Live file access')):
-            for path in ['/studio.js','/studio.css']:
+            for path in ['/studio.js','/studio.css','/output-log.js']:
                 response = await self.client.get(path)
                 self.assertEqual(response.status_code,200)
                 self.assertEqual(response.headers['cache-control'],'no-store')

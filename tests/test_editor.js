@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const {printBlockReasons, moveBlock, receiptTotal, defaultEdits} = require('../receipter/editor.js');
+const {printBlockReasons, moveBlock, receiptTotal, defaultEdits, formatReceiptDate, hexDump} = require('../receipter/editor.js');
 
 const ready = {statusKnown: true, buildMatches: true, connected: true, stopped: false,
   busy: false, serverBusy: false, hasReceipt: true, previewReady: true,
@@ -43,3 +43,12 @@ assert.equal(defaultEdits().fit, 'cover');
 assert.equal(receiptTotal([{quantity: 3, price: '0.10'}, {quantity: 1, price: '0.20'}]), .50);
 assert.equal(receiptTotal([]), 0);
 console.log('Stable section reordering, independent edits and cent-accurate totals passed.');
+assert.equal(formatReceiptDate(new Date(2026, 8, 8, 4, 5)), '08/09/2026 04:05');
+assert.equal(formatReceiptDate(new Date(2026, 11, 31, 23, 59)), '31/12/2026 23:59');
+const sample = Uint8Array.from([0x1b, 0x3d, 0x01, 0x41, 0x3c, 0x26, 0xff]);
+assert.match(hexDump(sample), /^00000000  1b 3d 01 41 3c 26 ff/);
+assert.ok(hexDump(sample).endsWith('|.=.A<&.|'));
+assert.equal(hexDump(new Uint8Array()), '');
+assert.match(hexDump(new Uint8Array(2048), 1024, 16), /^00000400  /);
+assert.equal(hexDump(new Uint8Array(2048), 1024, 16).split('\n').length, 1);
+console.log('Local receipt timestamps and paged hex/ASCII output formatting passed.');

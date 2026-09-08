@@ -3,6 +3,8 @@
 Run: uv run playwright install chromium && uv run python tests/browser_smoke.py
 """
 from io import BytesIO
+from datetime import datetime, timezone
+import re
 import json
 from pathlib import Path
 import socket
@@ -29,6 +31,18 @@ def photo():
     output = BytesIO(); image.save(output,'PNG'); return output.getvalue()
 
 
+def assert_uncovered(page, selector):
+    control = page.locator(selector)
+    control.scroll_into_view_if_needed()
+    assert control.evaluate('''element => {
+      const r = element.getBoundingClientRect();
+      const top = document.getElementById('top-bar').getBoundingClientRect().bottom;
+      const bottom = document.getElementById('bottom-bar').getBoundingClientRect().top;
+      const hit = document.elementFromPoint(r.x+r.width/2, r.y+r.height/2);
+      return r.top >= top && r.bottom <= bottom && (hit === element || element.contains(hit));
+    }'''), f'{selector} is covered by a floating bar'
+
+
 def main():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port = sock.getsockname()[1]
@@ -45,19 +59,25 @@ def main():
             status.update(connected=True,stopped=False,printing=False)
             with sync_playwright() as p:
                 browser = p.chromium.launch()
-                page = browser.new_page(viewport={'width':1440,'height':1100},device_scale_factor=1)
+                page = browser.new_page(viewport={'width':1440,'height':1100},device_scale_factor=1,timezone_id='UTC')
+                page.clock.set_fixed_time(datetime(2026,9,8,14,35,tzinfo=timezone.utc))
+                batch_plan = {}
                 errors, renders, prints = [], [], []
                 page.on('pageerror',lambda error:errors.append(str(error)))
                 page.on('request',lambda request:renders.append(request) if request.url.endswith('/api/receipt-preview') else None)
                 page.route('**/api/status',lambda route:route.fulfill(json=status))
                 def mock_print(route):
                     prints.append(route.request.post_data)
-                    route.fulfill(json={'message':'Mock USB accepted the receipt.', 'job_id':'test-only','bytes':123,'cut':'partial'})
+                    route.fulfill(json={'message':'Mock USB accepted the receipt.', 'job_id':'test-only',
+                                        'bytes':batch_plan['bytes'],'job_sha256':batch_plan['sha256'],'cut':'partial'})
                 page.route('**/api/print-receipt',mock_print)
                 page.goto(base)
                 expect(page.locator('#preview-state')).to_contain_text('Up to date')
                 expect(page.locator('#zoom')).to_have_value('1')
                 assert page.locator('#receipt-image').evaluate('(image) => image.getBoundingClientRect().width') == 400
+                expect(page.locator('#output-status')).to_have_text('Prepared — not sent')
+                expect(page.locator('#raw-output')).to_contain_text('00000000  1b 3d 01 1b 40')
+                assert not prints
                 # SVG logo and three independently editable photo blocks.
                 # File chooser target is set by the upload button.
                 with page.expect_file_chooser() as chooser:
@@ -100,7 +120,23 @@ def main():
                 page.locator('[data-item="0"][data-key="quantity"]').fill('3')
                 page.locator('[data-field="reference"]').fill('BOOTH-001')
                 expect(page.locator('#total')).to_have_text('$0.30')
+                page.locator('#automatic-date').check()
+                expect(page.locator('[data-field="date"]')).to_be_disabled()
+                expect(page.locator('[data-field="date"]')).to_have_value('08/09/2026 14:35')
                 expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                page.clock.set_fixed_time(datetime(2026,9,9,0,5,tzinfo=timezone.utc))
+                page.locator('#refresh-preview').click()
+                expect(page.locator('[data-field="date"]')).to_have_value('09/09/2026 00:05')
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                payload = renders[-1].post_data_buffer
+                document = json.loads(re.search(rb'name="document"\r\n\r\n(.*?)\r\n--',payload,re.S).group(1))
+                assert next(b['date'] for b in document['blocks'] if b['type']=='footer') == '09/09/2026 00:05'
+                page.locator('#automatic-date').uncheck()
+                expect(page.locator('[data-field="date"]')).to_be_enabled()
+                page.locator('[data-field="date"]').fill('08/09/2026 14:35')
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                assert_uncovered(page, '[data-field="currency"]')
+                assert_uncovered(page, '#delete-section')
                 count = len(renders)
                 src = page.locator('#receipt-image').get_attribute('src')
                 page.locator('#zoom').select_option('1.5')
@@ -117,15 +153,29 @@ def main():
                     page.locator('#copies').fill(invalid)
                     expect(page.locator('#print-receipt')).to_be_disabled()
                     expect(page.locator('#print-reasons')).to_contain_text('whole number of copies')
-                page.locator('#copies').fill('3')
+                with page.expect_response(lambda response: response.url.endswith('/api/receipt-output') and response.status == 200) as encoded:
+                    page.locator('#copies').fill('3')
+                batch_plan = encoded.value.json()
                 expect(page.locator('#print-receipt')).to_have_text('Print 3 copies →')
                 expect(page.locator('#print-receipt')).to_be_enabled()
                 assert len(renders) == count, 'Copy count must not regenerate the preview'
+                assert batch_plan['copies'] == 3
+                expect(page.locator('#output-status')).to_have_text('Prepared — not sent')
+                page.locator('#output-next').click()
+                expect(page.locator('#raw-output')).to_contain_text('00000400')
+                page.locator('#output-prev').click()
+                downloaded_sha = page.locator('#download-raw').evaluate('''async link => {
+                  const bytes = await (await fetch(link.href)).arrayBuffer();
+                  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+                }''')
+                assert downloaded_sha == batch_plan['sha256']
                 page.locator('#back-editing').click()
                 page.get_by_role('button',name='03 Printer preview').click()
                 expect(page.locator('#copies')).to_have_value('3')
                 page.locator('#print-receipt').click()
                 expect(page.locator('#message')).to_contain_text('Mock USB accepted')
+                expect(page.locator('#message')).to_contain_text(batch_plan['sha256'])
+                expect(page.locator('#output-status')).to_have_text('USB accepted')
                 expect(page.locator('#print-receipt')).to_be_disabled()
                 assert len(prints) == 1 and 'snapshot' in prints[0]
                 assert 'name="copies"\r\n\r\n3\r\n' in prints[0]
@@ -135,11 +185,27 @@ def main():
                 # Narrow screens keep the complete paper and all controls reachable.
                 page.set_viewport_size({'width':390,'height':844})
                 page.get_by_role('button',name='01 Receipt layout').click()
+                assert_uncovered(page, '[data-field="currency"]')
+                assert_uncovered(page, '#delete-section')
+                assert page.locator('#top-bar').evaluate('el => el.getBoundingClientRect().top') == 0
+                assert page.locator('#bottom-bar').evaluate('el => el.getBoundingClientRect().bottom') == 844
+                expanded_height = page.locator('#bottom-bar').bounding_box()['height']
+                page.locator('#output-details summary').click()
+                page.wait_for_timeout(100)
+                assert page.locator('#bottom-bar').bounding_box()['height'] < expanded_height
+                assert_uncovered(page, '#delete-section')
+                page.locator('#output-details summary').click()
                 page.screenshot(path='/tmp/receipter-mobile.png',full_page=True)
+                page.screenshot(path='/tmp/receipter-mobile-viewport.png')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile page overflows'
+                page.set_viewport_size({'width':320,'height':568})
+                page.wait_for_timeout(100)
+                assert_uncovered(page, '[data-field="currency"]')
+                assert_uncovered(page, '#delete-section')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Small-screen page overflows'
                 assert not errors, errors
                 browser.close()
-                print('Browser workflow passed: SVG + 3 photos, independent edits, reorder, totals, zoom isolation, snapshot printing, copy-count validation and mobile layout. No USB writes.')
+                print('Browser workflow passed: SVG + 3 photos, independent edits, reorder, totals, zoom isolation, snapshot printing, copy counts, automatic local dates, raw-byte log/download and unobstructed floating bars. No USB writes.')
         finally:
             server.terminate(); server.wait(timeout=10)
 

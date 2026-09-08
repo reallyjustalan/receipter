@@ -34,7 +34,22 @@
       black_ink: 100, red_ink: 100, crop_zoom: 1, crop_x: .5, crop_y: .5,
       fit: logo ? 'contain' : 'cover'};
   }
-  const api = {printBlockReasons, moveBlock, receiptTotal, defaultEdits};
+  function formatReceiptDate(date = new Date()) {
+    const pad = value => String(value).padStart(2, '0');
+    return `${pad(date.getDate())}/${pad(date.getMonth()+1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+  function hexDump(bytes, start = 0, count = 1024) {
+    const lines = [];
+    const end = Math.min(bytes.length, start + count);
+    for (let offset = start; offset < end; offset += 16) {
+      const row = bytes.slice(offset, Math.min(offset + 16, end));
+      const hex = Array.from(row, byte => byte.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+      const ascii = Array.from(row, byte => byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : '.').join('');
+      lines.push(`${offset.toString(16).padStart(8, '0')}  ${hex}  |${ascii}|`);
+    }
+    return lines.join('\n');
+  }
+  const api = {printBlockReasons, moveBlock, receiptTotal, defaultEdits, formatReceiptDate, hexDump};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ReceiptEditor = api;
 })(globalThis);

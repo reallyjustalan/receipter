@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="receipter-build" content="__BUILD_ID__">
-  <title>Receipter — little moments, on paper</title>
+  <title>Receipter</title>
   <link rel="stylesheet" href="/studio.css">
 </head>
 <body>
+  <div id="top-bar">
   <header class="app-header">
     <a class="brand" href="/" aria-label="Receipter home">receipter</a>
     <div class="printer-tools"><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
@@ -16,6 +17,7 @@
     <div class="modes"><button data-mode="layout" aria-pressed="true">01 <span>Receipt layout</span></button><button data-mode="image" aria-pressed="false" disabled>02 <span>Image editor</span></button><button data-mode="final" aria-pressed="false">03 <span>Printer preview</span></button></div>
     <label class="zoom-control">View <select id="zoom"><option value="0.65">65%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
   </nav>
+  </div>
   <main id="workspace" class="workspace" data-mode="layout">
     <aside id="sections-panel" class="sections-panel">
       <div class="panel-heading"><p class="eyebrow">YOUR RECEIPT</p><h2>Top to bottom</h2><p class="muted">Drag sections, or use the arrows.</p></div>
@@ -26,16 +28,23 @@
     <section class="stage" aria-label="Live receipt preview">
       <div class="stage-heading"><span id="stage-title">LIVE RECEIPT</span><span id="dot-count">400 DOTS WIDE</span></div>
       <p id="preview-state" role="status" aria-live="polite">Assembling your receipt…</p>
-      <div id="receipt-stage"><div id="paper"><img id="receipt-image" alt="Complete receipt, exactly as assembled for the printer"><div id="section-overlays"></div></div><p class="paper-note">76 mm paper · black &amp; red · made to keep</p></div>
+      <div id="receipt-stage"><div id="paper"><img id="receipt-image" alt="Complete receipt, exactly as assembled for the printer"><div id="section-overlays"></div></div><p class="paper-note">76 mm paper · black &amp; red</p></div>
       <div id="image-stage" hidden><div class="image-editor-heading"><button id="back-layout">← Back to receipt</button><span id="image-name"></span></div><div class="image-workbench"><div><canvas id="image-canvas" aria-label="Processed image section. Drag to reposition the crop; position sliders are also available."></canvas><p class="paper-note">Drag to position the crop. Every edit updates the receipt too.</p></div><div class="receipt-context"><p class="eyebrow">IN YOUR RECEIPT</p><div id="context-paper"><img id="context-image" alt="Live full receipt while editing this image"><div id="context-selection"></div></div></div></div></div>
     </section>
     <aside class="inspector"><div id="inspector-content"></div></aside>
   </main>
-  <footer class="app-footer"><span>NOTHING PRINTS UNTIL YOU SAY SO.</span><button id="refresh-preview">Refresh preview</button><a id="download" download="my-receipt.png" aria-disabled="true">Download PNG ↓</a></footer>
-  <div id="message" role="status" aria-live="polite"></div>
+  <footer class="app-footer" id="bottom-bar">
+    <div class="footer-toolbar"><strong>Printer output</strong><button id="refresh-preview">Refresh preview</button><a id="download" download="my-receipt.png" aria-disabled="true">Download PNG ↓</a><a id="download-raw" download="receipt.escpos" aria-disabled="true">Download raw ↓</a></div>
+    <details id="output-details" open><summary>ESC/POS bytes · <span id="output-status" role="status">Awaiting receipt preview</span></summary>
+      <div class="output-controls"><button id="output-prev" aria-label="Previous byte page" disabled>←</button><span id="output-page"></span><button id="output-next" aria-label="Next byte page" disabled>→</button></div>
+      <pre id="raw-output" tabindex="0" aria-label="Raw printer output: hexadecimal offsets, bytes and ASCII"></pre>
+    </details>
+    <div id="message" role="log" aria-live="polite" aria-label="Output event log"></div>
+  </footer>
   <input id="photo-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg" multiple hidden>
   <input id="asset-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg" hidden>
   <script src="/editor.js"></script>
+  <script src="/output-log.js"></script>
   <script src="/studio.js"></script>
 </body>
 </html>

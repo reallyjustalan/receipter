@@ -19,7 +19,7 @@ Heights are layout pixels, not printer rows. Layout width is 400 with 16-pixel h
 
 Text uses a bundled fixed-cell bitmap approximation of impact lettering, not the printer's ROM font. Glyphs occupy a 9×9 cell with 12-dot advance and 13-row line pitch, drawn directly into canonical dots. Printable ASCII, Latin-1 and euro are supported; common smart punctuation is normalized, and unsupported characters return 400. See [typography reference and rationale](../explanation/receipt-typography.md).
 
-An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. No taxes or automatic date generation are implied.
+An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. No taxes or server-side date generation are implied. The UI's per-footer automatic-date option resolves the browser's local clock to a `DD/MM/YYYY HH:mm` string before sending the preview document. The `date` API field remains a plain string; there is no `automatic_date` document field. Printing never recalculates it.
 
 ### Image edits
 
@@ -68,6 +68,22 @@ Response JSON:
 `y` and `height` are canonical row coordinates. PNG width/height are 2× the dot dimensions with nearest-neighbor pixels. The PNG is the same palette map used by printing, not a separate aesthetic mockup. Block metadata supports selection overlays and image-editor extraction.
 
 Rendering never prints. Snapshots expire after 1800 seconds or eviction from the 16-entry process-local cache. Restarting clears them.
+
+## `POST /api/receipt-output`
+
+Non-printing, non-consuming byte inspection. Form fields: `snapshot`, `cut` (default true), `feed_lines` (default 8), `copies` (1–10, default 1), with the same finishing validation as printing.
+
+Uses the **same encoder** as the print route on the stored canonical image. Response JSON contains:
+
+- `snapshot`, `build_id`
+- `bytes`: full batch byte count
+- `parts`: number of encoder/transport parts
+- `copies`, `cut` (boolean), `feed_lines`
+- `sha256`: SHA-256 of all parts joined in transfer order
+- `raw_base64`: the complete binary ESC/POS batch, including each copy's setup, graphics, feed and optional cut
+- `state`: `prepared_not_sent`
+
+Inspection does not acquire a printer job token, open USB, consume the snapshot, extend its expiry or send data. It works while the printer is offline or STOPPED. Missing/expired snapshots return 409. Invalid settings return 400 or 422. Browser formatting/pagination does not modify the bytes. The app freezes `/output-log.js` with its other assets at startup.
 
 ## `POST /api/print-receipt`
 

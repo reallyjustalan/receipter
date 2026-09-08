@@ -27,6 +27,7 @@ The current minimal UI is intentional; no visual redesign is planned.
 ```sh
 uv run python -m unittest discover -s tests -v
 node tests/test_editor.js
+node tests/test_output_log.js
 uv run playwright install chromium
 uv run python tests/browser_smoke.py
 ```

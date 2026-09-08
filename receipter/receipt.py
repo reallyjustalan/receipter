@@ -51,7 +51,7 @@ class Photo(Block):
 class Header(Block):
     type: Literal['header'] = 'header'
     title: str = Field('THE PHOTO BOOTH', max_length=100)
-    subtitle: str = Field('A little moment, on paper.', max_length=160)
+    subtitle: str = Field('', max_length=160)
     asset: str | None = Field(None, min_length=1, max_length=64)
     height: int = Field(100, ge=32, le=800)
     edits: ImageEdits = Field(default_factory=lambda: ImageEdits(fit='contain'))
@@ -69,17 +69,17 @@ class Footer(Block):
     currency: str = Field('$', max_length=4)
     date: str = Field('', max_length=40)
     reference: str = Field('', max_length=64)
-    text: str = Field('THANK YOU FOR THE MEMORIES', max_length=400)
+    text: str = Field('THANK YOU', max_length=400)
 
 
 class Text(Block):
     type: Literal['text'] = 'text'
-    text: str = Field('Your story, in a few words.', max_length=600)
+    text: str = Field('Receipt text', max_length=600)
 
 
 class Signature(Block):
     type: Literal['signature'] = 'signature'
-    label: str = Field('Signed with love', max_length=80)
+    label: str = Field('Signature', max_length=80)
 
 
 class Spacer(Block):

@@ -1,31 +1,45 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const {defaultEdits, moveBlock, receiptTotal} = ReceiptEditor;
+  const {defaultEdits, moveBlock, receiptTotal, formatReceiptDate} = ReceiptEditor;
   const build = document.querySelector('meta[name="receipter-build"]').content;
   const uid = () => crypto.randomUUID();
   const escapeHTML = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
-  const names = {header:'Header & logo', photo:'Photo', footer:'Itemised footer', text:'Text', signature:'Signature', spacer:'Breathing room'};
+  const names = {header:'Header & logo', photo:'Photo', footer:'Itemised footer', text:'Text', signature:'Signature', spacer:'Spacer'};
   const icons = {header:'◈', photo:'▧', footer:'≡', text:'T', signature:'〰', spacer:'↕'};
   function newBlock(type) {
     const block = {id:uid(), type};
-    if (type === 'header') Object.assign(block, {title:'THE PHOTO BOOTH', subtitle:'A little moment, on paper.', asset:null, height:100, edits:defaultEdits(true)});
+    if (type === 'header') Object.assign(block, {title:'THE PHOTO BOOTH', subtitle:'', asset:null, height:100, edits:defaultEdits(true)});
     if (type === 'photo') Object.assign(block, {asset:null, height:240, caption:'', edits:defaultEdits()});
-    if (type === 'footer') Object.assign(block, {items:[{label:'Memories', quantity:1, price:'0.00'}], currency:'$', date:'', reference:'', text:'THANK YOU FOR THE MEMORIES'});
-    if (type === 'text') block.text = 'Your story, in a few words.';
-    if (type === 'signature') block.label = 'Signed with love';
+    if (type === 'footer') Object.assign(block, {items:[{label:'Photo strip', quantity:1, price:'0.00'}], currency:'$', date:'', reference:'', text:'THANK YOU'});
+    if (type === 'text') block.text = 'Receipt text';
+    if (type === 'signature') block.label = 'Signature';
     if (type === 'spacer') block.height = 24;
     return block;
   }
   let documentState = {blocks:[newBlock('header'), newBlock('footer'), newBlock('signature')]};
   let selected = documentState.blocks[0].id;
   const assets = new Map();
+  const automaticDates = new Set();
   let mode = 'layout', zoom = Number($('zoom').value), revision = 0, timer, controller, snapshot = null;
   let previewError = '', busy = false, dirty = false, status = null, statusError = '', stoppedLocally = false;
   let finishing = {cut:true, feed_lines:8, copies:1};
   let uploadTarget = null;
   const selectedBlock = () => documentState.blocks.find(b => b.id === selected);
-  const tell = message => { $('message').textContent = message; };
+  const tell = message => {
+    const entry = document.createElement('div');
+    entry.textContent = `[${new Date().toLocaleTimeString('en-GB')}] ${message}`;
+    $('message').append(entry);
+    while ($('message').children.length > 40) $('message').firstChild.remove();
+    $('message').scrollTop = $('message').scrollHeight;
+  };
+  const outputLog = new ReceiptOutputLog(build, updatePrint, tell);
+  // Reserve the bars' actual wrapped heights, including mobile and log collapse.
+  const resizeBars = new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--top-bar-height', `${$('top-bar').offsetHeight}px`);
+    document.documentElement.style.setProperty('--bottom-bar-height', `${$('bottom-bar').offsetHeight}px`);
+  });
+  resizeBars.observe($('top-bar')); resizeBars.observe($('bottom-bar'));
 
   function renderList() {
     $('sections').innerHTML = documentState.blocks.map((b, i) => `<li draggable="true" data-id="${b.id}" class="${b.id === selected ? 'selected' : ''}"><button class="section-select" data-select="${b.id}" aria-pressed="${b.id === selected}"><span class="section-icon" aria-hidden="true">${icons[b.type]}</span><span class="section-name">${escapeHTML(b.type === 'header' ? b.title || names[b.type] : names[b.type])}<small>${String(i+1).padStart(2,'0')} / ${b.type.toUpperCase()}</small></span></button><div class="move-buttons"><button data-move="-1" data-id="${b.id}" aria-label="Move ${names[b.type]} up" ${i===0?'disabled':''}>↑</button><button data-move="1" data-id="${b.id}" aria-label="Move ${names[b.type]} down" ${i===documentState.blocks.length-1?'disabled':''}>↓</button></div></li>`).join('');
@@ -76,7 +90,7 @@
     const panel = $('inspector-content');
     const b = selectedBlock();
     if (mode === 'final') {
-      panel.innerHTML = `<p class="eyebrow">READY WHEN YOU ARE</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Bitmap text approximates the printer’s built-in font; it is not Epson ROM lettering. Preview dots match the sent image; ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
+      panel.innerHTML = `<p class="eyebrow">PRINT SETTINGS</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Bitmap text approximates the printer’s built-in font; it is not Epson ROM lettering. Preview dots match the sent image; ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
       $('cut').onchange = () => { finishing.cut = $('cut').checked; if (finishing.cut) finishing.feed_lines = Math.max(8, finishing.feed_lines); renderInspector(); };
       $('feed-lines').oninput = () => { finishing.feed_lines = Number($('feed-lines').value); updatePrint(); };
       $('copies').oninput = () => { finishing.copies = Number($('copies').value); updatePrint(); };
@@ -85,10 +99,10 @@
       updatePrint();
       return;
     }
-    if (!b) { panel.innerHTML = '<h2>Start a little story</h2><p class="muted">Add a section to begin your receipt.</p>'; return; }
+    if (!b) { panel.innerHTML = '<h2>Empty receipt</h2><p class="muted">Add a section to begin your receipt.</p>'; return; }
     if (mode === 'image') {
       const e = b.edits;
-      panel.innerHTML = `<p class="eyebrow">JUST THIS IMAGE</p><h2>Make it your own</h2><p class="muted">Independent settings for this ${b.type==='header'?'logo':'photo'}. Preview updates as you edit.</p>${select('Frame fit','fit',e.fit,[['cover','Crop to fill'],['contain','Fit entire image (white surround)']])}<div id="crop-controls">${range('Crop zoom','crop_zoom',e.crop_zoom,1,4,.05)}${range('Horizontal position','crop_x',e.crop_x,0,1,.01)}${range('Vertical position','crop_y',e.crop_y,0,1,.01)}</div>${select('Rotate clockwise','rotation',e.rotation,[[0,'Original'],[90,'90°'],[180,'180°'],[270,'270°']])}${check('Mirror left / right','flip_horizontal',e.flip_horizontal)}${check('Flip top / bottom','flip_vertical',e.flip_vertical)}<hr><h3>Tone & texture</h3>${range('Brightness','brightness',e.brightness,.2,2,.05)}${range('Contrast','contrast',e.contrast,.2,2,.05)}${range('Threshold / ink bias','threshold',e.threshold,1,255)}${check('Floyd–Steinberg dithering','dither',e.dither)}<p class="muted">Turn dithering off for crisp logos. A higher threshold adds ink; 128 is neutral.</p><hr><h3>Ribbon colours</h3>${select('Assign ink','assignment',e.assignment,[['auto','Automatic black + red'],['black','Black only'],['red','Red only'],['swap','Swap black ↔ red']])}${range('Black ink remaining (%)','black_ink',e.black_ink,0,100)}${range('Red ink remaining (%)','red_ink',e.red_ink,0,100)}<button id="reset-image" class="wide">Reset image adjustments</button>`;
+      panel.innerHTML = `<p class="eyebrow">JUST THIS IMAGE</p><h2>Image settings</h2><p class="muted">Independent settings for this ${b.type==='header'?'logo':'photo'}. Preview updates as you edit.</p>${select('Frame fit','fit',e.fit,[['cover','Crop to fill'],['contain','Fit entire image (white surround)']])}<div id="crop-controls">${range('Crop zoom','crop_zoom',e.crop_zoom,1,4,.05)}${range('Horizontal position','crop_x',e.crop_x,0,1,.01)}${range('Vertical position','crop_y',e.crop_y,0,1,.01)}</div>${select('Rotate clockwise','rotation',e.rotation,[[0,'Original'],[90,'90°'],[180,'180°'],[270,'270°']])}${check('Mirror left / right','flip_horizontal',e.flip_horizontal)}${check('Flip top / bottom','flip_vertical',e.flip_vertical)}<hr><h3>Tone & texture</h3>${range('Brightness','brightness',e.brightness,.2,2,.05)}${range('Contrast','contrast',e.contrast,.2,2,.05)}${range('Threshold / ink bias','threshold',e.threshold,1,255)}${check('Floyd–Steinberg dithering','dither',e.dither)}<p class="muted">Turn dithering off for crisp logos. A higher threshold adds ink; 128 is neutral.</p><hr><h3>Ribbon colours</h3>${select('Assign ink','assignment',e.assignment,[['auto','Automatic black + red'],['black','Black only'],['red','Red only'],['swap','Swap black ↔ red']])}${range('Black ink remaining (%)','black_ink',e.black_ink,0,100)}${range('Red ink remaining (%)','red_ink',e.red_ink,0,100)}<button id="reset-image" class="wide">Reset image adjustments</button>`;
       panel.querySelectorAll('[data-edit]').forEach(input => input.oninput = () => {
         const key = input.dataset.edit;
         b.edits[key] = input.type === 'checkbox' ? input.checked : ['fit','assignment'].includes(key) ? input.value : Number(input.value);
@@ -107,9 +121,9 @@
     if (b.type === 'signature') content += field('Signature label','label',b.label,{max:80}) + '<p class="muted">A blank signing area and rule are printed above this label.</p>';
     if (b.type === 'spacer') content += field('Space (layout pixels)','height',b.height,{type:'number',min:8,max:200});
     if (b.type === 'footer') {
-      content += '<p class="muted">A little tab for the occasion. Prices can be zero — memories are priceless.</p>' + field('Currency symbol','currency',b.currency,{max:4});
+      content += '<p class="muted">Line items, totals and receipt details.</p>' + field('Currency symbol','currency',b.currency,{max:4});
       content += b.items.map((item,i) => `<div class="item-row"><label>Item ${i+1}<input data-item="${i}" data-key="label" value="${escapeHTML(item.label)}" maxlength="64"></label><div class="row"><label>Qty<input data-item="${i}" data-key="quantity" type="number" min="1" max="999" value="${item.quantity}"></label><label>Unit price<input data-item="${i}" data-key="price" type="number" min="0" max="999999.99" step="0.01" value="${escapeHTML(item.price)}"></label></div><button class="remove" data-remove-item="${i}">Remove item</button></div>`).join('');
-      content += `<button id="add-item" class="wide" ${b.items.length>=12?'disabled':''}>＋ Add item</button><div class="total"><span>TOTAL</span><strong id="total">${escapeHTML(b.currency)}${receiptTotal(b.items).toFixed(2)}</strong></div><hr>` + field('Date (optional)','date',b.date,{max:40}) + field('Reference (optional)','reference',b.reference,{max:64}) + field('Footer message (optional)','text',b.text,{area:true,max:400});
+      content += `<button id="add-item" class="wide" ${b.items.length>=12?'disabled':''}>＋ Add item</button><div class="total"><span>TOTAL</span><strong id="total">${escapeHTML(b.currency)}${receiptTotal(b.items).toFixed(2)}</strong></div><hr>` + field('Date / time (optional)','date',b.date,{max:40}) + `<label class="check"><input id="automatic-date" type="checkbox" ${automaticDates.has(b.id)?'checked':''}>Use current date & time</label><p class="muted">Local time: DD/MM/YYYY HH:mm. Captured on each preview refresh; all copies use the previewed timestamp.</p>` + field('Reference (optional)','reference',b.reference,{max:64}) + field('Footer message (optional)','text',b.text,{area:true,max:400});
     }
     content += '<hr><button id="delete-section" class="remove">Remove this section</button>';
     panel.innerHTML = content;
@@ -118,6 +132,14 @@
       if (b.type === 'footer') updateTotal(b);
       renderList(); changed();
     });
+    if ($('automatic-date')) {
+      panel.querySelector('[data-field="date"]').disabled = automaticDates.has(b.id);
+      $('automatic-date').onchange = () => {
+        if ($('automatic-date').checked) { automaticDates.add(b.id); b.date = formatReceiptDate(); }
+        else automaticDates.delete(b.id);
+        renderInspector(); changed();
+      };
+    }
     panel.querySelectorAll('[data-item]').forEach(input => input.oninput = () => {
       b.items[Number(input.dataset.item)][input.dataset.key] = input.dataset.key==='quantity'?Number(input.value):input.value;
       updateTotal(b); changed();
@@ -130,6 +152,7 @@
     $('delete-section').onclick = () => {
       documentState.blocks = documentState.blocks.filter(block => block.id !== b.id);
       if (b.asset) assets.delete(b.asset);
+      automaticDates.delete(b.id);
       selected = documentState.blocks[0]?.id;
       renderList(); renderInspector(); changed();
     };
@@ -168,6 +191,12 @@
     controller?.abort();
     controller = new AbortController();
     updatePrint();
+    const timestamp = formatReceiptDate();
+    for (const block of documentState.blocks) {
+      if (block.type === 'footer' && automaticDates.has(block.id)) block.date = timestamp;
+    }
+    const dateInput = document.querySelector('[data-field="date"]');
+    if (dateInput && automaticDates.has(selected)) dateInput.value = selectedBlock().date;
     const form = new FormData();
     form.append('document', JSON.stringify(documentState));
     for (const [id, file] of assets) form.append('assets', file, id);
@@ -227,7 +256,7 @@
   function printReasons() {
     const invalidFeed = !Number.isInteger(finishing.feed_lines) || finishing.feed_lines < (finishing.cut?8:0) || finishing.feed_lines > 20;
     const invalidCopies = !Number.isInteger(finishing.copies) || finishing.copies < 1 || finishing.copies > 10;
-    return ReceiptEditor.printBlockReasons({
+    const reasons = ReceiptEditor.printBlockReasons({
       statusKnown: !!status, statusError, buildMatches: status?.build_id === build,
       connected: status?.connected, stopped: stoppedLocally || status?.stopped,
       busy, serverBusy: status?.printing, hasReceipt: documentState.blocks.length > 0,
@@ -235,8 +264,11 @@
       validationError: [invalidFeed ? 'Enter a valid trailing feed: '+(finishing.cut?'8':'0')+'–20 lines.' : '',
         invalidCopies ? 'Choose a whole number of copies from 1 to 10.' : ''].filter(Boolean).join('\n'),
     });
+    if (snapshot && !outputLog.ready(snapshot, finishing)) reasons.push('Waiting for matching printer bytes. Refresh preview if output encoding fails.');
+    return reasons;
   }
   function updatePrint() {
+    outputLog.update(snapshot, finishing);
     if (!$('print-receipt')) return;
     const reasons = printReasons();
     $('print-receipt').textContent = finishing.copies > 1 ? `Print ${finishing.copies} copies →` : 'Print one receipt →';
@@ -249,7 +281,7 @@
     try {
       status = await responseJSON(await fetch('/api/status'));
       statusError = '';
-      $('connection').textContent = status.stopped || stoppedLocally ? 'Printer stopped' : status.printing ? 'Printing…' : status.connected ? 'Printer connected' : 'Create now · printer offline';
+      $('connection').textContent = status.stopped || stoppedLocally ? 'Printer stopped' : status.printing ? 'Printing…' : status.connected ? 'Printer connected' : 'Printer offline';
       $('connection').classList.toggle('online',status.connected && !status.stopped && !stoppedLocally);
       $('resume').hidden = !(status.stopped || stoppedLocally);
       $('resume').disabled = status.printing || busy;
@@ -260,16 +292,28 @@
     if (printReasons().length) return;
     const form = new FormData();
     const printingRevision = revision;
+    const sentPlan = outputLog.plan;
     form.append('snapshot', snapshot.token);
     form.append('cut', finishing.cut);
     form.append('feed_lines', finishing.feed_lines);
     form.append('copies', finishing.copies);
     busy = true; updatePrint();
+    outputLog.mark('Sending', sentPlan);
+    tell(`SUBMIT ${sentPlan.bytes.length} bytes · SHA-256 ${sentPlan.sha256}`);
     tell(`Sending ${finishing.copies} ${finishing.copies === 1 ? 'receipt' : 'copies'} as one job. STOP cancels unsent copies; power off to stop buffered printing.`);
     try {
       const result = await responseJSON(await fetch('/api/print-receipt', {method:'POST',headers:{'X-Receipter-Build':build},body:form}));
-      tell(`${result.message}\nJob ${result.job_id} · ${result.bytes} bytes · ${result.cut} cut. Nothing will be resent automatically.`);
-    } catch(error) { tell(`Print failed: ${error.message}\nSome copies may already have printed. No automatic retry. Check the printer before another attempt.`); }
+      if (result.job_sha256 && result.job_sha256 !== sentPlan.sha256) {
+        outputLog.mark('Failed / delivery uncertain', sentPlan);
+        tell(`WARNING: job ${result.job_id} output fingerprint differs from the inspected bytes. Check the printer. Expected ${sentPlan.sha256}; reported ${result.job_sha256}.`);
+      } else {
+        outputLog.mark('USB accepted', sentPlan);
+        tell(`USB ACCEPTED · job ${result.job_id} · ${result.bytes} bytes · SHA-256 ${result.job_sha256 || 'not reported'}\n${result.message}`);
+      }
+    } catch(error) {
+      outputLog.mark('Failed / delivery uncertain', sentPlan);
+      tell(`Print failed: ${error.message}\nSome copies may already have printed. No automatic retry. Check the printer before another attempt.`);
+    }
     finally {
       busy = false;
       // Tokens are single-use. Never re-enable an uncertain job automatically.
@@ -291,7 +335,7 @@
   };
   $('resume').onclick = async () => {
     if (!confirm('Have you power-cycled the printer to clear its buffer?')) return;
-    try { const result = await responseJSON(await fetch('/api/resume',{method:'POST'})); stoppedLocally = false; tell(result.message); }
+    try { const result = await responseJSON(await fetch('/api/resume',{method:'POST'})); stoppedLocally = false; tell(result.message || 'Printing enabled.'); }
     catch(error) { tell(error.message); }
     await refreshStatus();
   };

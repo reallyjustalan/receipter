@@ -33,7 +33,13 @@ All adjustments are per image, including logos. The enlarged preview and full-re
 
 Add an **Itemised footer**. Enter labels, quantities and non-negative unit prices with up to two decimal places. Add or remove rows. The total is calculated using decimal arithmetic on the server; it is not a free-text total. Long labels wrap rather than overwriting right-aligned costs.
 
-Date, reference and footer text are optional. Empty fields are omitted. Dates are supplied explicitly, not regenerated at print time. Add a separate **Signature** section wherever a blank signing area is needed.
+Date, reference and footer text are optional. Empty fields are omitted. Add a separate **Signature** section wherever a blank signing area is needed.
+
+### Insert today's date and time
+
+In the footer, enable **Use current date & time**. The date field becomes automatic and uses the browser's local clock in receipt format, for example `08/09/2026 14:35` (day/month/year, 24-hour time).
+
+The time is captured on each receipt preview refresh, including refreshes caused by edits. It does not tick continuously or change silently at print time. Use **Refresh preview** to update a timestamp after leaving the editor idle. All copies in a batch use the exact previewed time. Disable the option to edit the captured date manually or clear it. This setting is per footer and follows that section when reordered.
 
 ## Print multiple copies
 
@@ -44,6 +50,20 @@ Date, reference and footer text are optional. Empty fields are omitted. Dates ar
 5. Inspect the paper. USB acceptance does not verify the number of physical receipts or cuts. Use STOP / Esc to cancel remaining unsent copies; power off to stop buffered data.
 
 After success or failure, explicitly **Refresh preview** before starting another batch. Do not automatically retry a failed batch: some copies may already have printed. Count the actual receipts first and choose only the remaining quantity.
+
+## Inspect printer output
+
+The floating bottom toolbar keeps **Refresh preview**, **Download PNG** and **Download raw** accessible. Its **ESC/POS bytes** panel updates when the receipt or copy/feed/cut settings change, without printing anything.
+
+- The byte view shows hexadecimal offsets, 16 hexadecimal bytes per row and a printable ASCII column. Non-printable bytes appear as dots only in the ASCII column; their actual hex values are retained.
+- Use the arrows to page through the complete stream, 1024 bytes at a time. The full job is available as `receipt.escpos` through **Download raw**.
+- `Prepared — not sent` means encoded candidate bytes, not printer activity. `Sending` means a request was submitted; it is not per-byte device acknowledgement. `USB accepted` reports completed host transfer, not physical output. A failure leaves delivery uncertain.
+- Timestamped event entries report byte counts, part counts and SHA-256 fingerprints. The submission fingerprint is compared with the server's returned job fingerprint. Old entries are retained up to 40 events; the byte pane/download holds the most recently inspected stream, not a permanent job archive.
+- During edits, the prior byte view is marked stale until matching output is ready. Printing is blocked while output inspection is pending or failed. The raw download may still represent the last inspected stream; use the state label to distinguish it from current output.
+
+Receipt text is rasterized, so most raw bytes are graphics payload, not readable text strings. Do not treat incidental ESC bytes inside those payloads as separate commands.
+
+Collapse **ESC/POS bytes** to reclaim screen space. The top printer/workspace controls and bottom toolbar float above the document; their measured heights reserve space for editing and keyboard focus, including on narrow screens.
 
 ## Review and export
 

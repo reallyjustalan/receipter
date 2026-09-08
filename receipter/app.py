@@ -24,10 +24,11 @@ MAX_UPLOAD = 20 * 1024 * 1024
 # against an older running process (which previously ignored the cut fields).
 _ROOT = Path(__file__).parent
 BUILD_ID = hashlib.sha256(b"".join((_ROOT / name).read_bytes() for name in
-    ("app.py", "index.html", "editor.js", "studio.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
+    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
 INDEX_HTML = (_ROOT / "index.html").read_text().replace("__BUILD_ID__", BUILD_ID)
 EDITOR_JS = (_ROOT / "editor.js").read_text()
 STUDIO_JS = (_ROOT / 'studio.js').read_text()
+OUTPUT_LOG_JS = (_ROOT / 'output-log.js').read_text()
 STUDIO_CSS = (_ROOT / 'studio.css').read_text()
 # Process-local, bounded, expiring canonical snapshots. Printing never re-renders.
 _snapshots = OrderedDict()
@@ -57,6 +58,11 @@ def editor_script() -> Response:
 @app.get('/studio.js')
 def studio_script() -> Response:
     return Response(STUDIO_JS, media_type='text/javascript', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/output-log.js')
+def output_log_script() -> Response:
+    return Response(OUTPUT_LOG_JS, media_type='text/javascript', headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/studio.css')
@@ -95,6 +101,25 @@ async def receipt_preview(document: str = Form(...), assets: list[UploadFile] = 
     return {'token': token, 'width': prepared.width, 'height': prepared.height,
             'scale': CANONICAL_SCALE, 'blocks': blocks,
             'png': base64.b64encode(prepared.preview_png).decode(), 'build_id': BUILD_ID}
+
+
+@app.post('/api/receipt-output')
+async def receipt_output(snapshot: str = Form(...), cut: bool = Form(True),
+                         feed_lines: int = Form(8), copies: int = Form(1, ge=1, le=10)) -> dict:
+    """Inspect the complete encoded job without consuming the snapshot or touching USB."""
+    saved = _snapshots.get(snapshot)
+    if saved is None or monotonic() - saved[0] > SNAPSHOT_TTL:
+        raise HTTPException(409, 'Preview expired. Refresh the preview to inspect output.')
+    try:
+        parts = await run_in_threadpool(_encode_prepared, saved[1], 1, 16,
+                                       cut=cut, feed_lines=feed_lines, copies=copies)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    raw = b''.join(parts)
+    return {'snapshot': snapshot, 'build_id': BUILD_ID, 'bytes': len(raw),
+            'parts': len(parts), 'copies': copies, 'cut': cut, 'feed_lines': feed_lines,
+            'sha256': hashlib.sha256(raw).hexdigest(),
+            'raw_base64': base64.b64encode(raw).decode(), 'state': 'prepared_not_sent'}
 
 
 @app.post('/api/print-receipt')
@@ -275,25 +300,29 @@ async def print_image(
                                  cut=cut, feed_lines=feed_lines)
 
 
-async def _print_prepared(prepared, density_mode, line_spacing, token, header=b"", *,
-                          cut=True, feed_lines=8, copies=1):
-    try:
-        if not isinstance(copies, int) or not 1 <= copies <= 10:
-            raise ValueError('Choose 1–10 copies')
-        if cut and feed_lines < 8:
-            raise ValueError("Use at least 8 trailing lines when cutting to clear the print head")
-        parts = await run_in_threadpool(encode_column_image_parts, prepared.colors,
-                                     density_mode=density_mode, line_spacing=line_spacing,
-                                     trailing_lines=feed_lines)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+def _encode_prepared(prepared, density_mode, line_spacing, header=b'', *,
+                     cut=True, feed_lines=8, copies=1):
+    """One encoder for byte inspection and printing; preserves band/write boundaries."""
+    if not isinstance(copies, int) or not 1 <= copies <= 10:
+        raise ValueError('Choose 1–10 copies')
+    if cut and feed_lines < 8:
+        raise ValueError('Use at least 8 trailing lines when cutting to clear the print head')
+    parts = encode_column_image_parts(prepared.colors, density_mode=density_mode,
+                                     line_spacing=line_spacing, trailing_lines=feed_lines)
     if header:
         parts.insert(0, header)
     if cut:
-        parts.append(PARTIAL_CUT)  # Own write, after image bands and clearance feed.
-    # Encode once; repeat complete copies under ONE transport lock/generation.
-    # Each copy keeps its own feed/cut. STOP/errors discard all remaining copies.
-    parts = parts * copies
+        parts.append(PARTIAL_CUT)
+    return parts * copies  # Complete copies, including per-copy feed/cut.
+
+
+async def _print_prepared(prepared, density_mode, line_spacing, token, header=b"", *,
+                          cut=True, feed_lines=8, copies=1):
+    try:
+        parts = await run_in_threadpool(_encode_prepared, prepared, density_mode, line_spacing,
+                                       header, cut=cut, feed_lines=feed_lines, copies=copies)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     _log.info("Image %dx%d density=%s feed_lines=%s cut_requested=%s copies=%s",
               prepared.width, prepared.height, density_mode, feed_lines, cut, copies)
     result = await _send(parts, token)

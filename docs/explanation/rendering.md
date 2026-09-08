@@ -28,6 +28,10 @@ The preview endpoint validates the whole document, renders once and stores the c
 
 Snapshots are process-local, bounded to sixteen entries and expire after thirty minutes. Each token is consumed on one print attempt (a batch of 1–10 copies), including uncertain delivery failures. The canonical image is encoded once and its complete setup/image/feed/cut parts are repeated under one transport lock. Copy count never triggers rendering, and finishing is applied per copy. This is one bounded job, not a queue of future jobs. STOP and errors discard all remaining unsent copies. An explicit preview refresh is required before another batch. This prevents accidental reuse and avoids automatic retries after ambiguous USB delivery. STOP retains the transport’s cancellation generation checks.
 
+The output inspector uses that same snapshot and the same job encoder to expose complete raw bytes without USB access. Finishing changes re-encode bytes, not images. Independent output request revisions prevent a late response for an old copy count or cut setting from being shown as current. The client blocks printing until both the image snapshot and byte inspection match current settings. It logs submission and USB acceptance separately and compares the reported job SHA-256 with the inspected stream; it does not invent live per-byte acknowledgement.
+
+Automatic footer dates are resolved from the browser's local clock before preview rendering. They remain literal text in the immutable snapshot, so inspecting output, printing or making multiple copies cannot silently change the date. The automatic option updates on preview refresh rather than continuously invalidating a reviewed receipt.
+
 Client revisions and request cancellation prevent an older render response from replacing newer edits. Printing is disabled during rendering, on validation errors, stale builds, disconnection, STOP or an active job. HTML, JavaScript, CSS and backend code share a startup build fingerprint. Restarting the server requires a refreshed browser before printing.
 
 ## Deliberate limits

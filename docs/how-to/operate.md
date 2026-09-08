@@ -16,11 +16,12 @@ After changing source files, stop and restart the server, then refresh the brows
 ```sh
 uv run python -m unittest discover -s tests -v
 node tests/test_editor.js
+node tests/test_output_log.js
 uv run playwright install chromium
 uv run python tests/browser_smoke.py
 ```
 
-Python tests cover rendering, SVG resource rejection, crop/processing, reorder invariants, totals, canonical scale, API snapshots and the retained transport/STOP guarantees. Node tests cover pure editor helpers. The Playwright test starts a temporary server, uses actual rendering endpoints, mocks status/print delivery, checks desktop/mobile interactions and asserts zoom causes no rendering request. It saves screenshots under `/tmp/receipter-*.png` and a temporary server log under `/tmp/receipter-browser-server.log`.
+Python tests cover rendering, SVG resource rejection, crop/processing, reorder invariants, totals, canonical scale, API snapshots and the retained transport/STOP guarantees. Node tests cover pure editor helpers, local date formatting, hex formatting and stale output-response handling. The Playwright test starts a temporary server, uses actual rendering endpoints, mocks status/print delivery, checks desktop/mobile interactions and asserts zoom causes no rendering request. It saves screenshots under `/tmp/receipter-*.png` and a temporary server log under `/tmp/receipter-browser-server.log`.
 
 ## Stop unexpected printing
 
@@ -44,7 +45,7 @@ Read the reason under the **Print** button:
 
 - Connect/power on the printer for disconnection. Editing still works offline.
 - Refresh the browser for build mismatch.
-- Wait for the latest preview; fix highlighted validation errors or choose **Refresh preview** if it stalls.
+- Wait for the latest preview and matching encoded output; fix validation errors or choose **Refresh preview** if either stalls. The floating output panel reports preparation, submission and USB acceptance separately; it does not imply that prepared bytes have been sent.
 - Shorten images/text/spacing for a receipt over 1024 rows.
 - Enter 8–20 trailing feed lines with cut, or 0–20 without.
 - Choose an integer copy count from 1 to 10. After a failed batch, inspect and count the actual receipts before choosing how many to print next; partial delivery is not automatically retried.
