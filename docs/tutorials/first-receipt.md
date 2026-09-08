@@ -12,8 +12,8 @@ You will assemble a logo, three photos, an itemised footer and a signing area. Y
 8. Select **Signature** and change its label to “We were here”. The blank area above the line is for signing on paper.
 9. Change **View** to 65% or 125%. Only the displayed size changes; the receipt’s printer dots stay the same.
 10. Open **Printer preview**. Review the complete receipt. Download the PNG if you are working without a printer. The exported PNG is the canonical dot map enlarged 2× in both axes, not an editable project.
-11. If a printer is connected and ready, leave the default eight trailing feed lines and partial cut selected, then click **Print one receipt**. Check the physical paper. A successful USB transfer does not verify the output.
+11. If a printer is connected and ready, leave **Copies** at 1, with the default eight trailing feed lines and partial cut selected, then click **Print one receipt**. Check the physical paper. A successful USB transfer does not verify the output.
 
-You have created a receipt from independent sections, rather than choosing a fixed layout. To print another copy, explicitly **Refresh preview** first.
+You have created a receipt from independent sections, rather than choosing a fixed layout. To start another print job, explicitly **Refresh preview** first. For several copies in one job, see [Print multiple copies](../how-to/edit-receipts.md#print-multiple-copies).
 
 Next: [editing tasks](../how-to/edit-receipts.md) or [why preview zoom is separate from rendering](../explanation/rendering.md).

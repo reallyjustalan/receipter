@@ -99,14 +99,16 @@ async def receipt_preview(document: str = Form(...), assets: list[UploadFile] = 
 
 @app.post('/api/print-receipt')
 async def print_receipt(snapshot: str = Form(...), cut: bool = Form(True),
-                        feed_lines: int = Form(8)) -> dict:
+                        feed_lines: int = Form(8), copies: int = Form(1, ge=1, le=10)) -> dict:
     token = _token()
+    if not 1 <= copies <= 10:
+        raise HTTPException(400, 'Choose 1–10 copies')
     if not 0 <= feed_lines <= 20 or (cut and feed_lines < 8):
         raise HTTPException(400, 'Use 8–20 feed lines with cutting, or 0–20 without')
     saved = _snapshots.pop(snapshot, None)
     if saved is None or monotonic() - saved[0] > SNAPSHOT_TTL:
         raise HTTPException(409, 'Preview expired or already printed. Refresh the preview before printing.')
-    return await _print_prepared(saved[1], 1, 16, token, cut=cut, feed_lines=feed_lines)
+    return await _print_prepared(saved[1], 1, 16, token, cut=cut, feed_lines=feed_lines, copies=copies)
 
 
 @app.get("/api/status")
@@ -274,8 +276,10 @@ async def print_image(
 
 
 async def _print_prepared(prepared, density_mode, line_spacing, token, header=b"", *,
-                          cut=True, feed_lines=8):
+                          cut=True, feed_lines=8, copies=1):
     try:
+        if not isinstance(copies, int) or not 1 <= copies <= 10:
+            raise ValueError('Choose 1–10 copies')
         if cut and feed_lines < 8:
             raise ValueError("Use at least 8 trailing lines when cutting to clear the print head")
         parts = await run_in_threadpool(encode_column_image_parts, prepared.colors,
@@ -287,15 +291,20 @@ async def _print_prepared(prepared, density_mode, line_spacing, token, header=b"
         parts.insert(0, header)
     if cut:
         parts.append(PARTIAL_CUT)  # Own write, after image bands and clearance feed.
-    _log.info("Image %dx%d density=%s feed_lines=%s cut_requested=%s",
-              prepared.width, prepared.height, density_mode, feed_lines, cut)
+    # Encode once; repeat complete copies under ONE transport lock/generation.
+    # Each copy keeps its own feed/cut. STOP/errors discard all remaining copies.
+    parts = parts * copies
+    _log.info("Image %dx%d density=%s feed_lines=%s cut_requested=%s copies=%s",
+              prepared.width, prepared.height, density_mode, feed_lines, cut, copies)
     result = await _send(parts, token)
     result["dots"] = [prepared.width, prepared.height]
     result["feed_lines"] = feed_lines
     result["cut"] = "partial" if cut else "none"
     result["cut_command_transferred"] = bool(cut)
     result["density_mode"] = density_mode
-    result["message"] = "Image and finishing bytes accepted by USB; verify the paper and cutter physically."
+    result["copies"] = copies
+    result["message"] = (f"Image and finishing bytes for {copies} {'copy' if copies == 1 else 'copies'} "
+                         "accepted by USB; verify every receipt and cut physically.")
     return result
 
 

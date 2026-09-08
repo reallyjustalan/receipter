@@ -112,10 +112,23 @@ def main():
                 page.get_by_role('button',name='03 Printer preview').click()
                 expect(page.locator('#print-receipt')).to_be_enabled()
                 assert page.locator('#receipt-image').get_attribute('src') == src
+                expect(page.locator('#copies')).to_have_value('1')
+                for invalid in ['', '0', '11', '1.5']:
+                    page.locator('#copies').fill(invalid)
+                    expect(page.locator('#print-receipt')).to_be_disabled()
+                    expect(page.locator('#print-reasons')).to_contain_text('whole number of copies')
+                page.locator('#copies').fill('3')
+                expect(page.locator('#print-receipt')).to_have_text('Print 3 copies →')
+                expect(page.locator('#print-receipt')).to_be_enabled()
+                assert len(renders) == count, 'Copy count must not regenerate the preview'
+                page.locator('#back-editing').click()
+                page.get_by_role('button',name='03 Printer preview').click()
+                expect(page.locator('#copies')).to_have_value('3')
                 page.locator('#print-receipt').click()
                 expect(page.locator('#message')).to_contain_text('Mock USB accepted')
                 expect(page.locator('#print-receipt')).to_be_disabled()
                 assert len(prints) == 1 and 'snapshot' in prints[0]
+                assert 'name="copies"\r\n\r\n3\r\n' in prints[0]
                 page.locator('#refresh-preview').click()
                 expect(page.locator('#print-receipt')).to_be_disabled()
                 expect(page.locator('#print-receipt')).to_be_enabled()
@@ -126,7 +139,7 @@ def main():
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile page overflows'
                 assert not errors, errors
                 browser.close()
-                print('Browser workflow passed: SVG + 3 photos, independent edits, reorder, totals, zoom isolation, snapshot printing and mobile layout. No USB writes.')
+                print('Browser workflow passed: SVG + 3 photos, independent edits, reorder, totals, zoom isolation, snapshot printing, copy-count validation and mobile layout. No USB writes.')
         finally:
             server.terminate(); server.wait(timeout=10)
 

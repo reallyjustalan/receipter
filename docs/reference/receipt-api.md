@@ -71,12 +71,14 @@ Rendering never prints. Snapshots expire after 1800 seconds or eviction from the
 
 ## `POST /api/print-receipt`
 
-Multipart/form fields: `snapshot` (preview token), `cut` (boolean, default true), `feed_lines` (integer, default 8).
+Multipart/form fields: `snapshot` (preview token), `cut` (boolean, default true), `feed_lines` (integer, default 8), `copies` (integer 1–10, default 1).
 
 Send `X-Receipter-Build` with the preview’s build ID. A supplied stale build is rejected with 409. Missing build headers remain accepted for existing non-browser clients.
 
-The snapshot is retrieved, consumed once and encoded with fixed mode 1 / line spacing 16. No image preparation occurs. With cutting, feed must be 8–20 lines; without cutting, 0–20. Invalid finishing fields are rejected without consuming the snapshot. Missing, evicted, consumed or expired tokens return 409. A token is not restored after an uncertain transport failure.
+The snapshot is retrieved, consumed once per batch and encoded once with fixed mode 1 / line spacing 16. No image preparation occurs. The complete encoded copy (setup, image, feed, optional cut) is repeated `copies` times under one transport lock and cancellation generation. Each copy receives its own feed/cut. Without cutting, the result is a continuous strip. The existing 2 MiB job-byte guard applies to the entire batch.
 
-Response includes `job_id`, `build_id`, `job_sha256`, accepted `bytes`, `dots`, `usb_parts`, `density_mode`, `feed_lines`, `cut`, `cut_command_transferred` and a human-readable message. USB success is not physical confirmation.
+With cutting, feed must be 8–20 lines; without cutting, 0–20. Invalid finishing fields or copy counts are rejected without consuming the snapshot. Missing, evicted, consumed or expired tokens return 409. A token is not restored after an uncertain transport failure.
+
+Response includes `job_id`, `build_id`, `job_sha256`, accepted `bytes`, `dots`, `usb_parts`, `density_mode`, `feed_lines`, `cut`, `cut_command_transferred`, `copies` and a human-readable message. `copies` is the requested count whose full batch was accepted by USB, not a physical count. `bytes`, `usb_parts` and `job_sha256` describe the whole batch; `dots` describes one copy. USB success is not physical confirmation. STOP or an error discards all remaining unsent copies; no completed-copy count is inferred from an uncertain failure.
 
 Validation errors return 400 (or 422 for malformed form types). Oversized documents/uploads return 413. STOP or job conflicts return 409; transport failures may return 503. There is no automatic retry.

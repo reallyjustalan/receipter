@@ -146,9 +146,45 @@ class ReceiptAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code,200,response.text)
             self.assertEqual(send.call_args.args[0].preview_png,b64decode(proof['png']))
             self.assertEqual(send.call_args.args[1:4],(1,16,1))
-            self.assertEqual(send.call_args.kwargs,{'cut':True,'feed_lines':8})
+            self.assertEqual(send.call_args.kwargs,{'cut':True,'feed_lines':8,'copies':1})
             response = await self.client.post('/api/print-receipt',data={'snapshot':proof['token']})
             self.assertEqual(response.status_code,409)
+            send.assert_awaited_once()
+
+    async def test_multiple_copies_use_one_snapshot_and_one_send(self):
+        from receipter.escpos import encode_column_image_parts, PARTIAL_CUT
+        proof = (await self.preview()).json()
+        prepared = app._snapshots[proof['token']][1]
+        single = encode_column_image_parts(prepared.colors, trailing_lines=8) + [PARTIAL_CUT]
+        with (patch.object(app,'_token',return_value=1),
+              patch.object(app,'render_receipt',side_effect=AssertionError('Do not rerender copies')),
+              patch.object(app,'_send',new_callable=AsyncMock,return_value={}) as send):
+            response = await self.client.post('/api/print-receipt',data={'snapshot':proof['token'],'copies':3})
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(response.json()['copies'],3)
+            self.assertEqual(send.call_args.args,(single*3,1))
+            send.assert_awaited_once()
+            self.assertNotIn(proof['token'],app._snapshots)
+            response = await self.client.post('/api/print-receipt',data={'snapshot':proof['token'],'copies':3})
+            self.assertEqual(response.status_code,409)
+            send.assert_awaited_once()
+
+    async def test_invalid_copy_counts_preserve_snapshot_and_send_nothing(self):
+        proof = (await self.preview()).json()
+        with patch.object(app,'_send',new_callable=AsyncMock) as send:
+            for copies in ['0','-1','11','1.5','abc']:
+                response = await self.client.post('/api/print-receipt',data={'snapshot':proof['token'],'copies':copies})
+                self.assertEqual(response.status_code,422,response.text)
+                self.assertIn(proof['token'],app._snapshots)
+            send.assert_not_called()
+
+    async def test_copy_batch_failure_consumes_snapshot_without_retry(self):
+        proof = (await self.preview()).json()
+        with (patch.object(app,'_token',return_value=1),
+              patch.object(app,'_send',new_callable=AsyncMock,side_effect=app.HTTPException(503,'USB failed')) as send):
+            response = await self.client.post('/api/print-receipt',data={'snapshot':proof['token'],'copies':3})
+            self.assertEqual(response.status_code,503)
+            self.assertNotIn(proof['token'],app._snapshots)
             send.assert_awaited_once()
 
     async def test_missing_expired_and_stale_tokens_never_print(self):

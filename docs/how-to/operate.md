@@ -40,13 +40,14 @@ STOP also latches after short writes/timeouts. It cannot stop other applications
 
 ## Resolve a blocked Print button
 
-Read the reason under **Print one receipt**:
+Read the reason under the **Print** button:
 
 - Connect/power on the printer for disconnection. Editing still works offline.
 - Refresh the browser for build mismatch.
 - Wait for the latest preview; fix highlighted validation errors or choose **Refresh preview** if it stalls.
 - Shorten images/text/spacing for a receipt over 1024 rows.
 - Enter 8–20 trailing feed lines with cut, or 0–20 without.
+- Choose an integer copy count from 1 to 10. After a failed batch, inspect and count the actual receipts before choosing how many to print next; partial delivery is not automatically retried.
 - Wait for an active job, or STOP it if necessary.
 - Power-cycle then Resume after STOP.
 - Refresh the preview after a print attempt, token expiry or cache eviction. Do this deliberately, not as an automatic resend after an error.

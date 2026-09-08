@@ -22,7 +22,7 @@
   const assets = new Map();
   let mode = 'layout', zoom = Number($('zoom').value), revision = 0, timer, controller, snapshot = null;
   let previewError = '', busy = false, dirty = false, status = null, statusError = '', stoppedLocally = false;
-  let finishing = {cut:true, feed_lines:8};
+  let finishing = {cut:true, feed_lines:8, copies:1};
   let uploadTarget = null;
   const selectedBlock = () => documentState.blocks.find(b => b.id === selected);
   const tell = message => { $('message').textContent = message; };
@@ -76,9 +76,10 @@
     const panel = $('inspector-content');
     const b = selectedBlock();
     if (mode === 'final') {
-      panel.innerHTML = `<p class="eyebrow">READY WHEN YOU ARE</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Finish the receipt</h3><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Bitmap text approximates the printer’s built-in font; it is not Epson ROM lettering. Preview dots match the sent image; ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
+      panel.innerHTML = `<p class="eyebrow">READY WHEN YOU ARE</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Bitmap text approximates the printer’s built-in font; it is not Epson ROM lettering. Preview dots match the sent image; ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
       $('cut').onchange = () => { finishing.cut = $('cut').checked; if (finishing.cut) finishing.feed_lines = Math.max(8, finishing.feed_lines); renderInspector(); };
       $('feed-lines').oninput = () => { finishing.feed_lines = Number($('feed-lines').value); updatePrint(); };
+      $('copies').oninput = () => { finishing.copies = Number($('copies').value); updatePrint(); };
       $('print-receipt').onclick = printReceipt;
       $('back-editing').onclick = () => setMode('layout');
       updatePrint();
@@ -225,18 +226,22 @@
 
   function printReasons() {
     const invalidFeed = !Number.isInteger(finishing.feed_lines) || finishing.feed_lines < (finishing.cut?8:0) || finishing.feed_lines > 20;
+    const invalidCopies = !Number.isInteger(finishing.copies) || finishing.copies < 1 || finishing.copies > 10;
     return ReceiptEditor.printBlockReasons({
       statusKnown: !!status, statusError, buildMatches: status?.build_id === build,
       connected: status?.connected, stopped: stoppedLocally || status?.stopped,
       busy, serverBusy: status?.printing, hasReceipt: documentState.blocks.length > 0,
       previewReady: !!snapshot && snapshot.revision === revision, previewError,
-      validationError: invalidFeed ? 'Enter a valid trailing feed: '+(finishing.cut?'8':'0')+'–20 lines.' : '',
+      validationError: [invalidFeed ? 'Enter a valid trailing feed: '+(finishing.cut?'8':'0')+'–20 lines.' : '',
+        invalidCopies ? 'Choose a whole number of copies from 1 to 10.' : ''].filter(Boolean).join('\n'),
     });
   }
   function updatePrint() {
     if (!$('print-receipt')) return;
     const reasons = printReasons();
+    $('print-receipt').textContent = finishing.copies > 1 ? `Print ${finishing.copies} copies →` : 'Print one receipt →';
     $('print-receipt').disabled = reasons.length > 0;
+    for (const id of ['copies', 'cut', 'feed-lines']) $(id).disabled = busy || !!status?.printing;
     $('print-receipt').title = reasons.join('\n');
     $('print-reasons').textContent = reasons.join('\n');
   }
@@ -258,12 +263,13 @@
     form.append('snapshot', snapshot.token);
     form.append('cut', finishing.cut);
     form.append('feed_lines', finishing.feed_lines);
+    form.append('copies', finishing.copies);
     busy = true; updatePrint();
-    tell('Sending one receipt. STOP cancels unsent data; power off to stop buffered printing.');
+    tell(`Sending ${finishing.copies} ${finishing.copies === 1 ? 'receipt' : 'copies'} as one job. STOP cancels unsent copies; power off to stop buffered printing.`);
     try {
       const result = await responseJSON(await fetch('/api/print-receipt', {method:'POST',headers:{'X-Receipter-Build':build},body:form}));
       tell(`${result.message}\nJob ${result.job_id} · ${result.bytes} bytes · ${result.cut} cut. Nothing will be resent automatically.`);
-    } catch(error) { tell(`Print failed: ${error.message}\nNo automatic retry. Check the printer before another attempt.`); }
+    } catch(error) { tell(`Print failed: ${error.message}\nSome copies may already have printed. No automatic retry. Check the printer before another attempt.`); }
     finally {
       busy = false;
       // Tokens are single-use. Never re-enable an uncertain job automatically.

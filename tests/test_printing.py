@@ -159,6 +159,40 @@ class TransportTests(unittest.TestCase):
         self.assertEqual([c.args[1] for c in self.device.write.call_args_list], parts)
         self.wait.assert_not_called()
 
+    def test_copy_batch_keeps_one_usb_session_and_lock_through_every_cut(self):
+        copy = encode_column_image_parts(tiny_test_image().colors, trailing_lines=8) + [PARTIAL_CUT]
+        def write(endpoint, data, timeout):
+            self.assertTrue(printer.print_state()['printing'])
+            self.assertTrue(printer._usb_lock.locked())
+            return len(data)
+        self.device.write.side_effect = write
+        written = printer.send_raw(copy * 3)
+        self.assertEqual([c.args[1] for c in self.device.write.call_args_list], copy * 3)
+        self.assertEqual(written, sum(map(len,copy))*3)
+        self.claim.assert_called_once()
+        self.dispose.assert_called_once()
+        self.assertFalse(printer.print_state()['printing'])
+
+    def test_stop_after_first_copy_discards_later_copies(self):
+        copy = encode_column_image_parts(tiny_test_image().colors, trailing_lines=8) + [PARTIAL_CUT]
+        def write(endpoint, data, timeout):
+            if data == PARTIAL_CUT:
+                printer.interrupt()
+            return len(data)
+        self.device.write.side_effect = write
+        with self.assertRaises(printer.PrintStopped):
+            printer.send_raw(copy * 3)
+        self.assertEqual([c.args[1] for c in self.device.write.call_args_list],copy)
+        self.assertFalse(printer.print_state()['printing'])
+
+    def test_short_write_in_first_copy_discards_remaining_batch_without_retry(self):
+        copy = encode_column_image_parts(tiny_test_image().colors, trailing_lines=8) + [PARTIAL_CUT]
+        self.device.write.side_effect = lambda endpoint,data,timeout: len(data)-1
+        with self.assertRaisesRegex(RuntimeError,'Short USB write'):
+            printer.send_raw(copy * 3)
+        self.device.write.assert_called_once()
+        self.assertTrue(printer.print_state()['stopped'])
+
     def test_oversize_and_empty_rejected_before_usb(self):
         for data in (b'', [], b'x' * (printer.MAX_JOB_BYTES + 1)):
             with self.assertRaises(ValueError):
@@ -325,6 +359,19 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
             result = await app._print_prepared(tiny_test_image(), 0, 16, printer.job_token(), cut=False, feed_lines=0)
             self.assertEqual(b''.join(send.call_args.args[0]), encode_column_image(tiny_test_image().colors, density_mode=0, trailing_lines=0))
             self.assertEqual(result['cut'], 'none')
+
+    async def test_ten_uncut_copies_encode_once_with_feed_per_copy(self):
+        from receipter import app
+        prepared = tiny_test_image()
+        single = encode_column_image_parts(prepared.colors, density_mode=0, trailing_lines=2)
+        with (patch.object(app,'_send',new_callable=AsyncMock,return_value={}) as send,
+              patch.object(app,'encode_column_image_parts',wraps=encode_column_image_parts) as encode):
+            result = await app._print_prepared(prepared,0,16,printer.job_token(),cut=False,feed_lines=2,copies=10)
+            self.assertEqual(send.call_args.args[0],single*10)
+            self.assertEqual(result['copies'],10)
+            self.assertEqual(result['cut'],'none')
+            encode.assert_called_once()
+            send.assert_awaited_once()
 
     async def test_invalid_clearance_rejected_before_send(self):
         from fastapi import HTTPException

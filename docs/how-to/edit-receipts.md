@@ -35,6 +35,16 @@ Add an **Itemised footer**. Enter labels, quantities and non-negative unit price
 
 Date, reference and footer text are optional. Empty fields are omitted. Dates are supplied explicitly, not regenerated at print time. Add a separate **Signature** section wherever a blank signing area is needed.
 
+## Print multiple copies
+
+1. Open **Printer preview** and wait for an up-to-date receipt.
+2. Set **Copies (1–10)** to the number you want; the default is one. The button updates to **Print N copies**. Changing the count does not regenerate the artwork.
+3. Choose trailing feed and partial cut. These settings apply **after every copy**. Without cutting, copies remain on one continuous strip; use feed lines if you want space between them.
+4. Click **Print N copies** once. All copies use the exact same snapshot and run sequentially as one job. No other job can be inserted between them.
+5. Inspect the paper. USB acceptance does not verify the number of physical receipts or cuts. Use STOP / Esc to cancel remaining unsent copies; power off to stop buffered data.
+
+After success or failure, explicitly **Refresh preview** before starting another batch. Do not automatically retry a failed batch: some copies may already have printed. Count the actual receipts first and choose only the remaining quantity.
+
 ## Review and export
 
 Use **Printer preview** for a clean proof without selection outlines. **View** changes CSS display dimensions only. The receipt image is not regenerated when you zoom or switch workspaces. Leave the default 100% view selected to inspect text without fractional downscaling; smaller views can hide fine dots on screen.
