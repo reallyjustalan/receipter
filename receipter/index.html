@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="receipter-build" content="__BUILD_ID__">
+  <title>TM-U220 Image Lab</title>
+  <style>
+    :root { color-scheme: light; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #eee9dc; color: #181713; }
+    main { max-width: 880px; margin: 28px auto; padding: 0 18px 60px; }
+    h1 { margin-bottom: 4px; }
+    .subtle { color: #625e53; }
+    .card { background: #fffdf5; border: 1px solid #c9c2af; box-shadow: 3px 3px 0 #181713; padding: 18px; margin-top: 18px; }
+    .status { display: flex; align-items: center; gap: 9px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: #9b1c1c; }
+    .dot.online { background: #167339; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 16px 0; align-items: start; }
+    .grid > *, label { min-width: 0; }
+    label { display: grid; align-content: start; gap: 6px; font-size: 13px; }
+    input:not([type="checkbox"]), select { width: 100%; min-width: 0; max-width: 100%; }
+    select { text-overflow: ellipsis; }
+    input[type="range"] { margin: 4px 0; }
+    .checks { display: grid; gap: 10px; align-self: center; }
+    @media (max-width: 580px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+    input, select, button { font: inherit; }
+    input[type="number"], select, input[type="file"] { padding: 8px; border: 1px solid #746f63; background: white; }
+    .check { display: flex; align-items: center; gap: 8px; min-height: 36px; align-self: center; }
+    .check input { flex: 0 0 auto; margin: 0; }
+    button { border: 1px solid #181713; background: #181713; color: white; padding: 10px 14px; cursor: pointer; }
+    button.secondary { background: #fffdf5; color: #181713; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    .print-control { position: relative; display: inline-flex; max-width: 100%; }
+    .print-control[data-blocked="true"] { cursor: not-allowed; }
+    .print-control button:disabled { pointer-events: none; }
+    .print-control:focus-visible { outline: 2px solid #8d1717; outline-offset: 4px; }
+    .print-tooltip { display: none; position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 10; width: 340px; max-width: 80vw; padding: 12px; background: #181713; color: white; font-size: 13px; white-space: pre-line; box-shadow: 2px 2px 6px #0004; pointer-events: none; }
+    .print-control[data-blocked="true"]:hover .print-tooltip,
+    .print-control[data-blocked="true"]:focus-within .print-tooltip { display: block; }
+    #print-block-reason { white-space: pre-line; font-size: 13px; color: #8d1717; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    #preview-wrap { overflow: auto; max-height: 520px; background: white; border: 1px dashed #746f63; margin: 14px 0; min-height: 80px; display: grid; place-items: center; }
+    #preview { image-rendering: pixelated; max-width: none; }
+    pre { white-space: pre-wrap; padding: 10px; background: #f0ecdf; min-height: 20px; }
+    .warning { color: #8d1717; font-weight: bold; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>TM-U220 Image Lab</h1>
+  <div class="subtle">Raw ESC/POS-A · 76 mm paper · black/red ribbon · one test at a time</div>
+
+  <section class="card">
+    <div class="status"><span id="dot" class="dot"></span><strong id="status">Checking USB…</strong></div>
+    <div id="usb-detail" class="subtle"></div>
+    <p class="actions"><button id="stop" style="background:#b00020">STOP / INTERRUPT (Esc)</button><button id="resume" class="secondary">Resume after power-cycle</button></p>
+    <div id="stop-status" class="warning">STOP blocks further data and new jobs. Power off the printer to clear data already buffered inside it.</div>
+  </section>
+
+  <section class="card">
+    <h2>1. Buffered printing</h2>
+    <p>Normal jobs now use <strong>up to 1 KiB USB writes with no artificial delay</strong>, letting USB apply backpressure. No USB resets or competing status polling. Buffered printing works, but intermittent corruption is under investigation. Image writes now preserve complete graphics bands. No automatic printing.</p>
+    <div class="actions">
+      <button id="ascii-test" disabled>1. Buffered text (no cut)</button>
+      <button id="text-test" disabled>2. Same text + partial cut</button>
+      <button id="tiny-packet-test" disabled>3. Buffered tiny image (no cut)</button>
+    </div>
+    <p>Tiny image: the confirmed 32 × 16-dot box/bar/slash pattern, using two single-density 8-pin bands. Its bytes exactly match the library encoder. The normal test now fits in one USB transfer. Larger and two-color images still need separate physical validation.</p>
+    <img src="/api/tiny-image-preview" alt="Expected tiny image: black frame, bar and diagonal" width="192" height="96" style="image-rendering:pixelated;background:white">
+    <p class="warning">The 512-byte restriction is removed (2 MiB host memory guard remains). STOP cancels unsent blocks; an active USB write may take up to 5 seconds to return. Power off to stop data already buffered inside the printer.</p>
+    <details><summary>Slow diagnostic fallbacks and full calibration</summary>
+    <div class="actions">
+      <button id="ascii-slow" disabled>Verified slow text (1 byte / 100 ms)</button>
+      <button id="image-slow" disabled>Verified slow image (8 bytes / 100 ms)</button>
+      <button id="tiny-test" disabled>Old 1-byte image comparison</button>
+    </div>
+    <div class="grid">
+      <label>Width (dot columns)<input id="cal-width" type="number" min="100" max="400" value="200"></label>
+      <label>Horizontal density<select id="cal-density"><option value="1">Mode 1 — double density</option><option value="0">Mode 0 — single density</option></select></label>
+      <label>Band feed units<input id="cal-spacing" type="number" min="1" max="255" value="16"></label>
+    </div>
+    <button id="calibrate" disabled>Print calibration + feed + partial cut</button>
+    </details>
+  </section>
+
+  <section class="card" id="image-editor">
+    <h2>2. Edit &amp; print an image</h2>
+    <label>Image file<input id="file" type="file" accept="image/*"></label>
+    <div class="grid">
+      <label>Orientation (clockwise)<select id="rotation"><option value="0">Original</option><option value="90">90° — landscape / portrait</option><option value="180">180° — upside down</option><option value="270">270° — landscape / portrait</option></select></label>
+      <div class="checks">
+        <label class="check"><input id="flip-horizontal" type="checkbox">Mirror left / right</label>
+        <label class="check"><input id="flip-vertical" type="checkbox">Flip top / bottom</label>
+      </div>
+    </div>
+    <div class="grid">
+      <label>Brightness <output id="brightness-value">100%</output><input id="brightness" type="range" min="0.2" max="2" step="0.05" value="1"></label>
+      <label>Contrast <output id="contrast-value">100%</output><input id="contrast" type="range" min="0.2" max="2" step="0.05" value="1"></label>
+      <label>Black ink remaining <output id="black-ink-value">100%</output><input id="black-ink" type="range" min="0" max="100" step="1" value="100"></label>
+      <label>Red ink remaining <output id="red-ink-value">100%</output><input id="red-ink" type="range" min="0" max="100" step="1" value="100"></label>
+    </div>
+    <p class="subtle">Preview updates automatically. Less ink removes dots to white, never swaps red and black. Brightness/contrast apply before quantization to the printer's black/red palette. The preview shows final dots; actual ribbon shades may differ. Each density remembers its own width and vertical scale.</p>
+    <button id="reset-edits" class="secondary">Reset image edits</button>
+    <div class="grid">
+      <label>Width (dot columns)<input id="width" type="number" min="32" max="400" value="400"></label>
+      <label>Vertical scale<input id="scale" type="number" min="0.1" max="2" step="0.05" value="0.5"></label>
+      <label>Horizontal density<select id="density"><option value="1">Mode 1 — double density</option><option value="0">Mode 0 — single density</option></select></label>
+      <label>Band feed units<input id="spacing" type="number" min="1" max="255" value="16"></label>
+      <label class="check"><input id="color" type="checkbox" checked>Quantize to black + red</label>
+      <label class="check"><input id="dither" type="checkbox" checked>Dither</label>
+    </div>
+    <div class="grid">
+      <label class="check"><input id="cut" type="checkbox" checked>Feed out and partially cut after printing</label>
+      <label>Trailing feed (lines)<input id="feed-lines" type="number" min="8" max="20" value="8"></label>
+    </div>
+    <p class="subtle">8 default-spaced lines feed ~34 mm past the image before cutting. Increase if the edge still needs more clearance. Partial cutting leaves a small paper bridge.</p>
+    <div class="actions">
+      <button id="make-preview" class="secondary">Refresh preview</button>
+      <span id="print-control" class="print-control" data-blocked="true" tabindex="0" aria-label="Print unavailable" aria-describedby="print-block-reason">
+        <button id="print" disabled aria-describedby="print-block-reason">Print this edited image once</button>
+        <span id="print-tooltip" class="print-tooltip" role="tooltip">Checking printer status. Choose an image to begin.</span>
+      </span>
+    </div>
+    <p id="print-block-reason" role="status" aria-live="polite">Checking printer status. Choose an image to begin.</p>
+    <p id="preview-status" class="subtle" aria-live="polite">Choose an image to begin.</p>
+    <div id="preview-wrap"><span class="subtle">Choose an image to preview its printable dots.</span></div>
+  </section>
+
+  <section class="card">
+    <strong>Result</strong>
+    <pre id="result">No print has been attempted from this server.</pre>
+    <div class="subtle">USB success means the job was transferred; the printer may still be finishing the image, feed and cut.</div>
+  </section>
+</main>
+<script src="/editor.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const clientBuild = document.querySelector('meta[name="receipter-build"]').content;
+  const printHeaders = {'X-Receipter-Build': clientBuild};
+  let buildMatches = false;
+  let statusKnown = false;
+  let statusError = '';
+  let previewError = '';
+  let currentDensity = $('density').value;
+  const densitySettings = {'0': {width: 200, scale: 1}, '1': {width: 400, scale: 0.5}};
+  let calibrationDensity = $('cal-density').value;
+  const calibrationWidths = {'0': {width: 200}, '1': {width: 200}};
+  let connected = false;
+  let stopped = false;
+  let busy = false;
+  let serverBusy = false;
+  let previewReady = false;
+  let previewVersion = 0;
+  let previewTimer;
+  let previewController;
+  let previewUrl;
+  const editFields = ['rotation', 'flip-horizontal', 'flip-vertical', 'brightness',
+    'contrast', 'black-ink', 'red-ink', 'width', 'scale', 'color', 'dither'];
+
+  $('stop').addEventListener('click', async () => {
+    stopped = true;
+    updateButtons();
+    $('stop-status').textContent = 'Requesting STOP… If paper keeps feeding, switch the printer OFF now.';
+    try {
+      const r = await fetch('/api/interrupt', {method: 'POST'});
+      if (!r.ok) await showError(r);
+      $('stop-status').textContent = (await r.json()).message;
+    } catch (e) { $('stop-status').textContent = `STOP failed: ${e}. Switch the printer OFF.`; }
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') $('stop').click(); });
+  $('resume').addEventListener('click', async () => {
+    if (!confirm('Has the printer been switched off/on to clear its buffer?')) return;
+    try {
+      const r = await fetch('/api/resume', {method: 'POST'});
+      if (!r.ok) await showError(r);
+      stopped = false;
+      $('stop-status').textContent = 'Printing enabled. STOP / Esc interrupts remaining host data.';
+      await refreshStatus();
+    } catch (e) { $('stop-status').textContent = e; }
+  });
+  async function runTextTest(endpoint) {
+    busy = true; updateButtons();
+    $('result').textContent = 'Sending one test; STOP cancels remaining host data…';
+    try {
+      const r = await fetch(endpoint, {method: 'POST', headers: printHeaders});
+      if (!r.ok) await showError(r);
+      $('result').textContent = JSON.stringify(await r.json(), null, 2);
+    } catch (e) { $('result').textContent = e; }
+    finally { busy = false; updateButtons(); }
+  }
+  $('text-test').addEventListener('click', () => runTextTest('/api/print-cut-test'));
+  $('ascii-test').addEventListener('click', () => runTextTest('/api/print-text'));
+  $('tiny-test').addEventListener('click', () => {
+    if (confirm('Run the old single-byte image comparison? It previously failed; the main image button now uses buffered writes.')) runTextTest('/api/print-tiny-image-slow');
+  });
+
+  $('tiny-packet-test').addEventListener('click', () => runTextTest('/api/print-tiny-image'));
+  $('ascii-slow').addEventListener('click', () => runTextTest('/api/print-ascii-diagnostic'));
+  $('image-slow').addEventListener('click', () => runTextTest('/api/print-tiny-image-packet'));
+
+  async function refreshStatus() {
+    try {
+      const r = await fetch('/api/status');
+      if (!r.ok) await showError(r);
+      const s = await r.json();
+      statusKnown = true;
+      statusError = '';
+      buildMatches = s.build_id === clientBuild;
+      connected = s.connected;
+      stopped = s.stopped;
+      serverBusy = s.printing;
+      if (stopped) $('stop-status').textContent = 'STOPPED: new jobs blocked. Power-cycle printer to clear buffered data, then Resume.';
+      if (!buildMatches) $('stop-status').textContent = 'Server updated. Refresh this page before printing; these controls are from an older build.';
+      $('dot').classList.toggle('online', connected);
+      $('status').textContent = connected ? `Connected: Epson ${s.vendor_id}:${s.product_id}` : `Not detected: Epson ${s.vendor_id}:${s.product_id}`;
+      const seen = s.devices.map(d => `${d.vendor_id}:${d.product_id} ${d.manufacturer} ${d.product}`).join(' · ');
+      $('usb-detail').textContent = connected ? `${s.model} · profile ${s.profile} · cutter ${s.cutter} · OUT endpoint ${s.out_endpoint}` : `USB devices seen: ${seen || 'none'}`;
+      updateButtons();
+    } catch (e) {
+      connected = false;
+      statusError = e.message || String(e);
+      updateButtons();
+      $('status').textContent = `Status error: ${e}`;
+    }
+  }
+
+  function updateButtons() {
+    const disabled = !connected || !buildMatches || stopped || busy || serverBusy;
+    $('calibrate').disabled = disabled;
+    $('ascii-slow').disabled = disabled;
+    $('image-slow').disabled = disabled;
+    $('tiny-test').disabled = disabled;
+    $('tiny-packet-test').disabled = disabled;
+    $('text-test').disabled = disabled;
+    $('ascii-test').disabled = disabled;
+    $('resume').disabled = !stopped || serverBusy;
+    document.querySelectorAll('#image-editor input, #image-editor select').forEach(el => el.disabled = busy || serverBusy);
+    $('red-ink').disabled = busy || serverBusy || !$('color').checked;
+    $('reset-edits').disabled = busy || serverBusy;
+    $('make-preview').disabled = busy || serverBusy;
+    const fields = [['feed-lines', 'Trailing feed'], ['spacing', 'Band feed'], ['width', 'Width'], ['scale', 'Vertical scale']];
+    const invalid = fields.find(([id]) => !$(id).value.trim() || !$(id).validity.valid);
+    const validationError = invalid ? `${invalid[1]}: ${$(invalid[0]).validationMessage || 'Enter a valid value.'}` : '';
+    const reasons = ReceiptEditor.printBlockReasons({statusKnown, statusError, buildMatches,
+      connected, stopped, busy, serverBusy, hasFile: !!$('file').files.length,
+      previewReady, previewError, validationError});
+    const blocked = reasons.length > 0;
+    const reason = reasons.join('\n');
+    $('print').disabled = blocked;
+    $('print').title = reason;
+    $('print-control').dataset.blocked = String(blocked);
+    $('print-control').tabIndex = blocked ? 0 : -1;
+    $('print-control').setAttribute('aria-label', blocked ? 'Print unavailable' : 'Print image');
+    $('print-tooltip').textContent = reason;
+    $('print-block-reason').textContent = reason;
+    $('print-block-reason').hidden = !blocked;
+  }
+
+  function imageForm(includePrintSettings = false) {
+    const f = new FormData();
+    f.append('image', $('file').files[0]);
+    f.append('width', $('width').value);
+    f.append('vertical_scale', $('scale').value);
+    f.append('two_color', $('color').checked);
+    f.append('dither', $('dither').checked);
+    f.append('rotation', $('rotation').value);
+    f.append('flip_horizontal', $('flip-horizontal').checked);
+    f.append('flip_vertical', $('flip-vertical').checked);
+    for (const id of ['brightness', 'contrast', 'black-ink', 'red-ink']) {
+      f.append(id.replace('-', '_'), $(id).value);
+    }
+    if (includePrintSettings) {
+      f.append('cut', $('cut').checked);
+      f.append('feed_lines', $('feed-lines').value);
+      f.append('density_mode', $('density').value);
+      f.append('line_spacing', $('spacing').value);
+    }
+    return f;
+  }
+
+  async function showError(r) {
+    let message = `${r.status} ${r.statusText}`;
+    try { message = (await r.json()).detail || message; } catch (_) {}
+    throw new Error(message);
+  }
+
+  function updateEditLabels() {
+    for (const id of ['brightness', 'contrast', 'black-ink', 'red-ink']) {
+      const factor = id.endsWith('-ink') ? 1 : 100;
+      $(id + '-value').textContent = `${Math.round(Number($(id).value) * factor)}%`;
+    }
+  }
+
+  function schedulePreview() {
+    ++previewVersion;
+    previewReady = false;
+    previewError = '';
+    previewController?.abort();
+    clearTimeout(previewTimer);
+    updateEditLabels();
+    updateButtons();
+    $('preview-wrap').style.opacity = '.4';
+    $('preview-status').textContent = $('file').files.length ? 'Updating preview…' : 'Choose an image to begin.';
+    previewTimer = setTimeout(preview, 250);
+  }
+
+  async function preview() {
+    clearTimeout(previewTimer);
+    const version = ++previewVersion;
+    previewReady = false;
+    previewError = '';
+    previewController?.abort();
+    previewController = new AbortController();
+    updateButtons();
+    if (!$('file').files.length) return;
+    $('preview-status').textContent = 'Rendering final black/red dots…';
+    try {
+      const r = await fetch('/api/preview', {method: 'POST', body: imageForm(), signal: previewController.signal});
+      if (!r.ok) await showError(r);
+      const blob = await r.blob();
+      if (version !== previewVersion) return;
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(blob);
+      $('preview-wrap').innerHTML = '<img id="preview" alt="Final edited black/red print dots">';
+      $('preview').src = previewUrl;
+      $('preview-wrap').style.opacity = '1';
+      previewReady = true;
+      $('preview-status').textContent = `${r.headers.get('X-Dot-Width')} × ${r.headers.get('X-Dot-Height')} dots. These edits will be used for printing. Nothing printed.`;
+    } catch (e) {
+      if (version === previewVersion && e.name !== 'AbortError') {
+        previewError = e.message || String(e);
+        $('preview-status').textContent = previewError;
+      }
+    } finally {
+      if (version === previewVersion) updateButtons();
+    }
+  }
+
+  $('file').addEventListener('change', schedulePreview);
+  for (const id of editFields) $(id).addEventListener('input', schedulePreview);
+  $('make-preview').addEventListener('click', preview);
+  $('reset-edits').addEventListener('click', () => {
+    $('rotation').value = '0';
+    $('flip-horizontal').checked = $('flip-vertical').checked = false;
+    $('brightness').value = $('contrast').value = '1';
+    $('black-ink').value = $('red-ink').value = '100';
+    $('color').checked = $('dither').checked = true;
+    schedulePreview();
+  });
+  $('density').addEventListener('change', () => {
+    const next = $('density').value;
+    const settings = ReceiptEditor.switchDensity(currentDensity, next,
+      {width: Number($('width').value), scale: Number($('scale').value)}, densitySettings);
+    currentDensity = next;
+    $('width').max = next === '0' ? '200' : '400';
+    $('width').value = settings.width;
+    $('scale').value = settings.scale;
+    schedulePreview();
+  });
+  $('cal-density').addEventListener('change', () => {
+    const next = $('cal-density').value;
+    const settings = ReceiptEditor.switchDensity(calibrationDensity, next,
+      {width: Number($('cal-width').value)}, calibrationWidths);
+    calibrationDensity = next;
+    $('cal-width').max = next === '0' ? '200' : '400';
+    $('cal-width').value = settings.width;
+  });
+  $('cut').addEventListener('change', () => {
+    $('feed-lines').min = $('cut').checked ? '8' : '0';
+    if ($('cut').checked && Number($('feed-lines').value) < 8) $('feed-lines').value = '8';
+    updateButtons();
+  });
+  $('feed-lines').addEventListener('input', updateButtons);
+  $('spacing').addEventListener('input', updateButtons);
+
+  $('print').addEventListener('click', async () => {
+    if (!previewReady || !buildMatches || busy || serverBusy || stopped) return;
+    const form = imageForm(true); // Snapshot exactly the settings just previewed.
+    busy = true; updateButtons();
+    $('result').textContent = 'Sending exactly one image job…';
+    try {
+      const r = await fetch('/api/print', {method: 'POST', headers: printHeaders, body: form});
+      if (!r.ok) await showError(r);
+      $('result').textContent = JSON.stringify(await r.json(), null, 2);
+    } catch (e) { $('result').textContent = e; }
+    finally { busy = false; updateButtons(); }
+  });
+
+  $('calibrate').addEventListener('click', async () => {
+    busy = true; updateButtons();
+    $('result').textContent = 'Sending exactly one calibration job…';
+    const f = new FormData();
+    f.append('width', $('cal-width').value);
+    f.append('density_mode', $('cal-density').value);
+    f.append('line_spacing', $('cal-spacing').value);
+    try {
+      const r = await fetch('/api/print-calibration', {method: 'POST', headers: printHeaders, body: f});
+      if (!r.ok) await showError(r);
+      $('result').textContent = JSON.stringify(await r.json(), null, 2);
+    } catch (e) { $('result').textContent = e; }
+    finally { busy = false; updateButtons(); }
+  });
+
+  updateButtons();
+  refreshStatus();
+  setInterval(refreshStatus, 3000);
+</script>
+</body>
+</html>
