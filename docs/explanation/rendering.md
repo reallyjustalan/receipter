@@ -20,7 +20,7 @@ Raster decoding or bounded SVG rasterization → EXIF orientation → white tran
 
 SVGs use the same pipeline after rasterization. resvg resolves vector geometry at bounded resolution; untrusted external resources are rejected before rendering. SVG text should be outlined because system font discovery is disabled for predictable resource handling. Output contains raster dots, never arbitrary uploaded printer commands.
 
-Each image is quantized independently, then pasted into a shared indexed receipt canvas. The assembled receipt is **not** quantized a second time. Consequently, moving a photo preserves its dither pattern and ink thinning. Text is rendered at layout resolution and passed through the same canonical sizing path, in black without dithering. Item totals use decimal arithmetic and measured right alignment.
+Each image is quantized independently, then pasted into a shared indexed receipt canvas. The assembled receipt is **not** quantized a second time. Consequently, moving a photo preserves its dither pattern and ink thinning. Text uses fixed-cell bitmap glyphs drawn directly into canonical black dots without resizing or thresholding. This avoids losing thin strokes during vertical downsampling. The letters approximate impact-printer typography; they are not Epson ROM glyphs. Item totals use decimal arithmetic and fixed-pitch right alignment. See [receipt typography](receipt-typography.md) for provenance, character coverage and fidelity limits.
 
 ## Why printing uses a snapshot
 
@@ -36,4 +36,4 @@ There is no print queue, persistent asset library or editable project storage. B
 
 The existing USB transport and diagnostic endpoints remain separate from the creator UI. Buffered printing has been physically confirmed on the target setup; complete multi-photo/red-black receipts and this composition path still require physical validation. Software tests establish byte and preview consistency, not mechanical correctness.
 
-For implementation contracts see [receipt API reference](../reference/receipt-api.md). For the separately deferred aesthetic work see [visual direction](visual-direction.md).
+For implementation contracts see [receipt API reference](../reference/receipt-api.md).

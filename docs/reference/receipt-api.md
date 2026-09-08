@@ -17,6 +17,8 @@ OpenAPI is served at `/docs`. This reference describes the creator workflow. [Pr
 
 Heights are layout pixels, not printer rows. Layout width is 400 with 16-pixel horizontal margins. Canonical vertical scale is 0.5. The assembled output must fit 1024 rows; otherwise rendering fails rather than clipping. Receipt previews approximate physical pixel aspect in CSS; see [rendering](../explanation/rendering.md).
 
+Text uses a bundled fixed-cell bitmap approximation of impact lettering, not the printer's ROM font. Glyphs occupy a 9×9 cell with 12-dot advance and 13-row line pitch, drawn directly into canonical dots. Printable ASCII, Latin-1 and euro are supported; common smart punctuation is normalized, and unsupported characters return 400. See [typography reference and rationale](../explanation/receipt-typography.md).
+
 An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. No taxes or automatic date generation are implied.
 
 ### Image edits

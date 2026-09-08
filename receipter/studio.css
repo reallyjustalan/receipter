@@ -1,5 +1,4 @@
-/* Functional layout only. Receipt/dot-matrix art direction is deferred.
-   See docs/explanation/visual-direction.md. */
+/* Intentionally minimal styling for the receipt editor. */
 :root { font-family: system-ui, sans-serif; color: #222; background: #fafafa; }
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -10,18 +9,15 @@ button:disabled, a[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #a22; outline-offset: 2px; }
 button.primary { background: #333; color: white; border-color: #333; }
 a { color: inherit; }
-.app-header, .intro, .workspace-nav, .app-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid #ddd; }
+.app-header, .workspace-nav, .app-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid #ddd; }
 .brand { font-size: 22px; font-weight: 700; text-decoration: none; }
 .brand-icon, .edition { display: none; }
 .printer-tools, .modes, .zoom-control { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .stop, .remove { color: #a22; }
 #connection.online::before { content: '● '; color: #27643b; }
-.intro { align-items: start; }
-h1 { font-size: 24px; margin: 0; }
 h2 { font-size: 19px; margin: 0 0 12px; }
 h3 { font-size: 15px; }
 p { line-height: 1.5; }
-.intro p { margin: 0; font-size: 13px; color: #666; }
 .eyebrow, .muted, .session-note, .paper-note { font-size: 12px; color: #666; }
 .eyebrow { margin: 0 0 8px; }
 .modes button[aria-pressed="true"] { border-color: #222; font-weight: bold; }
@@ -86,8 +82,6 @@ a[aria-disabled="true"] { pointer-events: none; }
 }
 @media (max-width: 780px) {
   .app-header, .workspace-nav, .app-footer { flex-wrap: wrap; padding: 12px; }
-  .intro { padding: 16px 12px; }
-  .intro > p { display: none; }
   .modes { gap: 4px; }
   .modes button { font-size: 11px; }
   .workspace, .workspace[data-mode="image"], .workspace[data-mode="final"] { grid-template-columns: minmax(0, 1fr); }

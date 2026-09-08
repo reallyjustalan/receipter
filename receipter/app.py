@@ -24,7 +24,7 @@ MAX_UPLOAD = 20 * 1024 * 1024
 # against an older running process (which previously ignored the cut fields).
 _ROOT = Path(__file__).parent
 BUILD_ID = hashlib.sha256(b"".join((_ROOT / name).read_bytes() for name in
-    ("app.py", "index.html", "editor.js", "studio.js", "studio.css", "receipt.py", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
+    ("app.py", "index.html", "editor.js", "studio.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
 INDEX_HTML = (_ROOT / "index.html").read_text().replace("__BUILD_ID__", BUILD_ID)
 EDITOR_JS = (_ROOT / "editor.js").read_text()
 STUDIO_JS = (_ROOT / 'studio.js').read_text()

@@ -14,9 +14,9 @@ Open <http://localhost:8022>. Run **one server process**, without multiple worke
 - **Tutorial:** [Make your first photo receipt](docs/tutorials/first-receipt.md)
 - **How-to guides:** [Edit a receipt](docs/how-to/edit-receipts.md) · [Run, test and troubleshoot](docs/how-to/operate.md)
 - **Reference:** [Receipt model and API](docs/reference/receipt-api.md) · [Printer and diagnostic endpoints](docs/reference/printer.md)
-- **Explanation:** [Canonical rendering and preview architecture](docs/explanation/rendering.md) · [Deferred visual direction](docs/explanation/visual-direction.md)
+- **Explanation:** [Canonical rendering and preview architecture](docs/explanation/rendering.md) · [Receipt typography and font fidelity](docs/explanation/receipt-typography.md)
 
-The current UI deliberately has only structural styling. A receipt-inspired, dot-matrix aesthetic is reserved for a separate future commit.
+The current minimal UI is intentional; no visual redesign is planned.
 
 ## Safety
 

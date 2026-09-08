@@ -20,7 +20,7 @@
   let documentState = {blocks:[newBlock('header'), newBlock('footer'), newBlock('signature')]};
   let selected = documentState.blocks[0].id;
   const assets = new Map();
-  let mode = 'layout', zoom = .85, revision = 0, timer, controller, snapshot = null;
+  let mode = 'layout', zoom = Number($('zoom').value), revision = 0, timer, controller, snapshot = null;
   let previewError = '', busy = false, dirty = false, status = null, statusError = '', stoppedLocally = false;
   let finishing = {cut:true, feed_lines:8};
   let uploadTarget = null;
@@ -76,7 +76,7 @@
     const panel = $('inspector-content');
     const b = selectedBlock();
     if (mode === 'final') {
-      panel.innerHTML = `<p class="eyebrow">READY WHEN YOU ARE</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Finish the receipt</h3><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Preview dots are exact; ribbon shade, pin spacing and paper may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
+      panel.innerHTML = `<p class="eyebrow">READY WHEN YOU ARE</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Finish the receipt</h3><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Bitmap text approximates the printer’s built-in font; it is not Epson ROM lettering. Preview dots match the sent image; ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
       $('cut').onchange = () => { finishing.cut = $('cut').checked; if (finishing.cut) finishing.feed_lines = Math.max(8, finishing.feed_lines); renderInspector(); };
       $('feed-lines').oninput = () => { finishing.feed_lines = Number($('feed-lines').value); updatePrint(); };
       $('print-receipt').onclick = printReceipt;

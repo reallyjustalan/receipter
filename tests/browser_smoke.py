@@ -56,6 +56,8 @@ def main():
                 page.route('**/api/print-receipt',mock_print)
                 page.goto(base)
                 expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                expect(page.locator('#zoom')).to_have_value('1')
+                assert page.locator('#receipt-image').evaluate('(image) => image.getBoundingClientRect().width') == 400
                 # SVG logo and three independently editable photo blocks.
                 # File chooser target is set by the upload button.
                 with page.expect_file_chooser() as chooser:

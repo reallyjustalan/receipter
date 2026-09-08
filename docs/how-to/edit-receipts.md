@@ -37,7 +37,9 @@ Date, reference and footer text are optional. Empty fields are omitted. Dates ar
 
 ## Review and export
 
-Use **Printer preview** for a clean proof without selection outlines. **View** changes CSS display dimensions only. The receipt image is not regenerated when you zoom or switch workspaces.
+Use **Printer preview** for a clean proof without selection outlines. **View** changes CSS display dimensions only. The receipt image is not regenerated when you zoom or switch workspaces. Leave the default 100% view selected to inspect text without fractional downscaling; smaller views can hide fine dots on screen.
+
+Receipt lettering is a crisp fixed-cell bitmap approximation, not the printer's firmware font. For an unsupported-character error, use Latin/Latin-1 text or upload outlined artwork. See [receipt typography](../explanation/receipt-typography.md) for exact coverage and limitations.
 
 **Download PNG** exports the processed canonical map (2× nearest-neighbor dot enlargement). It does not save source images, editable blocks, physical pin spacing or trailing feed/cut clearance. Drafts are session-only: keep the tab open if you want to continue editing.
 

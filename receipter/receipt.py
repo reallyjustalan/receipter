@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from io import BytesIO
 from typing import Annotated, Literal
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
-from .imaging import CANONICAL_SCALE, PreparedImage, _palette, _preview, prepare_image
+from .imaging import BLACK, CANONICAL_SCALE, PreparedImage, _palette, _preview, prepare_image
+from .receipt_font import LINE_ROWS, draw_text, normalize, text_width
 
 WIDTH = 400
 MARGIN = 16
@@ -95,50 +95,58 @@ class Receipt(Model):
 
 
 class TextCanvas:
-    """Draw text at layout resolution, wrapping by measured width, not characters."""
+    """Draw glyphs at printer resolution; keep the section cursor in layout units."""
     def __init__(self):
-        self.image = Image.new('RGB', (WIDTH - 2 * MARGIN, 2048), 'white')
+        self.image = Image.new('P', (WIDTH - 2 * MARGIN, MAX_ROWS), 0)
+        self.image.putpalette(_palette().getpalette())
         self.draw = ImageDraw.Draw(self.image)
-        self.font = ImageFont.load_default(size=18)
         self.y = 8
 
     def line(self, text: str, *, center=False):
-        for paragraph in text.split('\n'):
+        for paragraph in normalize(text).split('\n'):
             pending = ''
             for char in paragraph:
-                if self.draw.textlength(pending + char, font=self.font) > self.image.width - 4:
+                if text_width(pending + char) > self.image.width:
                     self._line(pending, center)
                     pending = ''
                 pending += char
             self._line(pending, center)
 
     def _line(self, text, center):
-        x = (self.image.width - self.draw.textlength(text, font=self.font)) / 2 if center else 0
-        self.draw.text((x, self.y), text, font=self.font, fill='black')
-        self.y += 26
+        x = (self.image.width - text_width(text)) // 2 if center else 0
+        draw_text(self.image, x, round(self.y * CANONICAL_SCALE), text, BLACK)
+        self.y += round(LINE_ROWS / CANONICAL_SCALE)
         if self.y > 2000:
             raise ValueError('Text section is too long')
 
     def rule(self):
         self.y += 10
-        self.draw.line((0, self.y, self.image.width - 1, self.y), fill='black', width=2)
+        row = round(self.y * CANONICAL_SCALE)
+        self.draw.line((0, row, self.image.width - 1, row), fill=BLACK, width=1)
         self.y += 14
 
     def amount(self, label, amount):
         # Reserve a separate row if the label cannot fit alongside the amount.
-        aw = self.draw.textlength(amount, font=self.font)
-        if self.draw.textlength(label, font=self.font) + aw + 20 > self.image.width:
+        label, amount = normalize(label), normalize(amount)
+        aw = text_width(amount)
+        if '\n' in amount or aw > self.image.width:
+            raise ValueError('Receipt amount is too wide or contains a newline')
+        if '\n' in label or text_width(label) + aw + 20 > self.image.width:
             self.line(label)
             label = ''
-        self.draw.text((0, self.y), label, font=self.font, fill='black')
-        self.draw.text((self.image.width - aw, self.y), amount, font=self.font, fill='black')
-        self.y += 26
+        row = round(self.y * CANONICAL_SCALE)
+        draw_text(self.image, 0, row, label, BLACK)
+        draw_text(self.image, self.image.width - aw, row, amount, BLACK)
+        self.y += round(LINE_ROWS / CANONICAL_SCALE)
+        if self.y > 2000:
+            raise ValueError('Text section is too long')
 
     def prepared(self):
-        output = BytesIO()
-        self.image.crop((0, 0, self.image.width, self.y + 8)).save(output, 'PNG')
-        return prepare_image(output.getvalue(), self.image.width, CANONICAL_SCALE,
-                             two_color=False, dither=False).colors
+        # Already canonical: never resize/threshold these glyphs as an image.
+        rows = round((self.y + 8) * CANONICAL_SCALE)
+        if rows > MAX_ROWS:
+            raise ValueError('Text section is too long')
+        return self.image.crop((0, 0, self.image.width, rows))
 
 
 def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[PreparedImage, list[dict]]:
