@@ -1,15 +1,8 @@
 const assert = require('node:assert/strict');
-const {switchDensity, printBlockReasons} = require('../receipter/editor.js');
-const remembered = {'0': {width: 200, scale: 1}, '1': {width: 400, scale: 0.5}};
-assert.deepEqual(switchDensity('1', '0', {width: 400, scale: 0.5}, remembered), {width: 200, scale: 1});
-assert.deepEqual(switchDensity('0', '1', {width: 200, scale: 1}, remembered), {width: 400, scale: 0.5});
-assert.deepEqual(switchDensity('1', '0', {width: 320, scale: 0.7}, remembered), {width: 200, scale: 1});
-assert.deepEqual(switchDensity('0', '1', {width: 160, scale: 1.1}, remembered), {width: 320, scale: 0.7});
-assert.deepEqual(switchDensity('1', '0', {width: 320, scale: 0.7}, remembered), {width: 160, scale: 1.1});
-console.log('Density round-trip, custom widths and per-mode aspect settings passed.');
+const {printBlockReasons, moveBlock, receiptTotal, defaultEdits} = require('../receipter/editor.js');
 
 const ready = {statusKnown: true, buildMatches: true, connected: true, stopped: false,
-  busy: false, serverBusy: false, hasFile: true, previewReady: true,
+  busy: false, serverBusy: false, hasReceipt: true, previewReady: true,
   statusError: '', previewError: '', validationError: ''};
 assert.deepEqual(printBlockReasons(ready), []);
 for (const [changes, expected] of [
@@ -20,7 +13,7 @@ for (const [changes, expected] of [
   [{stopped: true}, /Resume/],
   [{busy: true}, /job is active/],
   [{serverBusy: true}, /job is active/],
-  [{hasFile: false}, /Choose an image/],
+  [{hasReceipt: false}, /Add a receipt section/],
   [{previewReady: false}, /up-to-date preview/],
   [{previewReady: false, previewError: 'Prepared image exceeds 1024 rows'}, /Preview failed: Prepared image exceeds 1024 rows/],
   [{validationError: 'Trailing feed must be at least 8'}, /Trailing feed must be at least 8/],
@@ -29,6 +22,24 @@ for (const [changes, expected] of [
   assert.equal(reasons.length, 1);
   assert.match(reasons[0], expected);
 }
-assert.equal(printBlockReasons({...ready, buildMatches: false, hasFile: false, stopped: true}).length, 3);
-assert.equal(printBlockReasons({...ready, hasFile: false, previewReady: false, previewError: 'old error'}).length, 1);
+assert.equal(printBlockReasons({...ready, buildMatches: false, hasReceipt: false, stopped: true}).length, 3);
+assert.equal(printBlockReasons({...ready, hasReceipt: false, previewReady: false, previewError: 'old error'}).length, 1);
 console.log('Every disabled-print state has a reason; preview errors and multiple blockers preserved.');
+
+const photoA = {id: 'a', edits: defaultEdits()};
+const photoB = {id: 'b', edits: {...defaultEdits(), crop_zoom: 2, assignment: 'red'}};
+const blocks = [{id: 'header'}, photoA, photoB, {id: 'footer'}];
+const reordered = moveBlock(blocks, 'b', 1);
+assert.deepEqual(reordered.map(b => b.id), ['header', 'b', 'a', 'footer']);
+assert.deepEqual(blocks.map(b => b.id), ['header', 'a', 'b', 'footer']);
+assert.equal(reordered[1], photoB);
+assert.equal(reordered[1].edits.crop_zoom, 2);
+assert.equal(reordered[2].edits.crop_zoom, 1);
+assert.equal(moveBlock(blocks, 'unknown', 1), blocks);
+assert.equal(moveBlock(blocks, 'a', -20)[0], photoA);
+assert.equal(moveBlock(blocks, 'a', 20).at(-1), photoA);
+assert.equal(defaultEdits(true).fit, 'contain');
+assert.equal(defaultEdits().fit, 'cover');
+assert.equal(receiptTotal([{quantity: 3, price: '0.10'}, {quantity: 1, price: '0.20'}]), .50);
+assert.equal(receiptTotal([]), 0);
+console.log('Stable section reordering, independent edits and cent-accurate totals passed.');

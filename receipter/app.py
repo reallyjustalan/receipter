@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from time import perf_counter
+from time import perf_counter, monotonic
+from collections import OrderedDict
+import base64
+import asyncio
 from pathlib import Path
 import hashlib
 import logging
@@ -11,18 +14,25 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .escpos import PARTIAL_CUT, encode_column_image_parts, encode_tiny_image_test
-from .imaging import calibration_image, prepare_image, tiny_test_image
+from .imaging import CANONICAL_SCALE, calibration_image, prepare_image, tiny_test_image
+from .receipt import Receipt, render_receipt
 from .printer import ASCII_DIAGNOSTIC, DEFAULT_CHUNK_SIZE, PrintStopped, interrupt, job_token, resume, send_raw, target_status
 
-app = FastAPI(title="TM-U220 Image Lab")
+app = FastAPI(title="Receipter · Photo booth")
 MAX_UPLOAD = 20 * 1024 * 1024
 # Freeze assets with this backend. Editing files must not expose new controls
 # against an older running process (which previously ignored the cut fields).
 _ROOT = Path(__file__).parent
 BUILD_ID = hashlib.sha256(b"".join((_ROOT / name).read_bytes() for name in
-    ("app.py", "index.html", "editor.js", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
+    ("app.py", "index.html", "editor.js", "studio.js", "studio.css", "receipt.py", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
 INDEX_HTML = (_ROOT / "index.html").read_text().replace("__BUILD_ID__", BUILD_ID)
 EDITOR_JS = (_ROOT / "editor.js").read_text()
+STUDIO_JS = (_ROOT / 'studio.js').read_text()
+STUDIO_CSS = (_ROOT / 'studio.css').read_text()
+# Process-local, bounded, expiring canonical snapshots. Printing never re-renders.
+_snapshots = OrderedDict()
+_render_slots = asyncio.Semaphore(2)
+SNAPSHOT_TTL = 1800
 _log = logging.getLogger("uvicorn.error")
 
 
@@ -42,6 +52,61 @@ def index() -> HTMLResponse:
 @app.get("/editor.js")
 def editor_script() -> Response:
     return Response(EDITOR_JS, media_type="text/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get('/studio.js')
+def studio_script() -> Response:
+    return Response(STUDIO_JS, media_type='text/javascript', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/studio.css')
+def studio_styles() -> Response:
+    return Response(STUDIO_CSS, media_type='text/css', headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/api/receipt-preview')
+async def receipt_preview(document: str = Form(...), assets: list[UploadFile] = File(default=[])) -> dict:
+    if len(document) > 32_000 or len(assets) > 16:
+        raise HTTPException(413, 'Receipt document or asset count is too large')
+    try:
+        receipt = Receipt.model_validate_json(document)
+        images = {}
+        total = 0
+        for asset in assets:
+            raw = await asset.read(MAX_UPLOAD + 1)
+            total += len(raw)
+            if len(raw) > MAX_UPLOAD or total > 60 * 1024 * 1024:
+                raise HTTPException(413, 'Limit: 20 MB per image, 60 MB per receipt')
+            if not asset.filename or asset.filename in images:
+                raise ValueError('Image asset names must be unique')
+            images[asset.filename] = raw
+        async with _render_slots:
+            prepared, blocks = await run_in_threadpool(render_receipt, receipt, images)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    now = monotonic()
+    for key, (created, _) in list(_snapshots.items()):
+        if now - created > SNAPSHOT_TTL:
+            del _snapshots[key]
+    token = uuid.uuid4().hex
+    _snapshots[token] = (now, prepared)
+    while len(_snapshots) > 16:
+        _snapshots.popitem(last=False)
+    return {'token': token, 'width': prepared.width, 'height': prepared.height,
+            'scale': CANONICAL_SCALE, 'blocks': blocks,
+            'png': base64.b64encode(prepared.preview_png).decode(), 'build_id': BUILD_ID}
+
+
+@app.post('/api/print-receipt')
+async def print_receipt(snapshot: str = Form(...), cut: bool = Form(True),
+                        feed_lines: int = Form(8)) -> dict:
+    token = _token()
+    if not 0 <= feed_lines <= 20 or (cut and feed_lines < 8):
+        raise HTTPException(400, 'Use 8–20 feed lines with cutting, or 0–20 without')
+    saved = _snapshots.pop(snapshot, None)
+    if saved is None or monotonic() - saved[0] > SNAPSHOT_TTL:
+        raise HTTPException(409, 'Preview expired or already printed. Refresh the preview before printing.')
+    return await _print_prepared(saved[1], 1, 16, token, cut=cut, feed_lines=feed_lines)
 
 
 @app.get("/api/status")
@@ -82,6 +147,8 @@ def image_adjustments(
 
 
 async def _prepare(image, width, vertical_scale, two_color, dither, adjustments=None):
+    if vertical_scale != CANONICAL_SCALE:
+        raise HTTPException(400, 'Printer rendering uses canonical vertical_scale=0.5. Zoom the preview visually instead.')
     raw = await image.read(MAX_UPLOAD + 1)
     if len(raw) > MAX_UPLOAD:
         raise HTTPException(413, "Image is larger than 20 MB")

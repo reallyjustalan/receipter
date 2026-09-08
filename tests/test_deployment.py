@@ -38,4 +38,4 @@ class DeploymentTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(b'__BUILD_ID__', html.body)
         self.assertEqual(html.headers['cache-control'], 'no-store')
         self.assertEqual(script.headers['cache-control'], 'no-store')
-        self.assertIn(b'switchDensity', script.body)
+        self.assertIn(b'defaultEdits', script.body)

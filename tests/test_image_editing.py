@@ -112,9 +112,9 @@ class SharedPipelineTests(unittest.IsolatedAsyncioTestCase):
         edits = dict(rotation=90, flip_horizontal=True, flip_vertical=False,
                      brightness=1.2, contrast=0.8, black_ink=35, red_ink=70)
         raw = swatches()
-        response = await app.preview(UploadFile(file=BytesIO(raw)), 32, 1, True, True, edits)
+        response = await app.preview(UploadFile(file=BytesIO(raw)), 32, 0.5, True, True, edits)
         with patch.object(app, '_print_prepared', new_callable=AsyncMock, return_value={}) as send:
-            await app.print_image(UploadFile(file=BytesIO(raw)), 32, 1, True, True, 0, 16,
+            await app.print_image(UploadFile(file=BytesIO(raw)), 32, 0.5, True, True, 0, 16,
                                   True, 8, edits)
             prepared = send.call_args.args[0]
             self.assertEqual(response.body, prepared.preview_png)

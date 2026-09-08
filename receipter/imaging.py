@@ -4,6 +4,45 @@ from dataclasses import dataclass
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageOps
+from defusedxml import ElementTree
+import resvg_py
+import re
+
+CANONICAL_SCALE = 0.5
+
+
+def load_source(raw: bytes, raster_width: int = 1200) -> Image.Image:
+    """Decode raster or self-contained SVG; never resolve external resources."""
+    try:
+        raw = raw.removeprefix(b'\xef\xbb\xbf')
+        if raw.lstrip().startswith(b'<'):
+            if len(raw) > 2 * 1024 * 1024:
+                raise ValueError('SVG exceeds 2 MB')
+            root = ElementTree.fromstring(raw)
+            if root.tag.split('}')[-1] != 'svg':
+                raise ValueError('Expected an SVG root')
+            for node in root.iter():
+                if node.tag.split('}')[-1] in ('image', 'feImage', 'foreignObject', 'script', 'style'):
+                    raise ValueError('SVG must use self-contained vector shapes (no images, scripts or stylesheets)')
+                for key, value in node.attrib.items():
+                    if key.split('}')[-1] == 'href' and not value.startswith('#'):
+                        raise ValueError('External SVG references are not allowed')
+                    if '@import' in value or any(not ref.strip(' \"\'').startswith('#')
+                                                for ref in re.findall(r'url\((.*?)\)', value, re.I)):
+                        raise ValueError('External SVG resources are not allowed')
+            # A bounded square render also bounds pathological SVG aspect ratios.
+            raw = resvg_py.svg_to_bytes(svg_string=ElementTree.tostring(root, encoding='unicode'),
+                                       width=raster_width, height=raster_width,
+                                       skip_system_fonts=True)
+        source = Image.open(BytesIO(raw))
+        if source.width * source.height > 24_000_000:
+            raise ValueError('Image exceeds 24 megapixels')
+        source.load()
+        return ImageOps.exif_transpose(source).convert('RGBA')
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError('The uploaded file is not a readable raster image or SVG') from exc
 
 
 WHITE = 0
@@ -54,6 +93,13 @@ def prepare_image(
     contrast: float = 1.0,
     black_ink: float = 100,
     red_ink: float = 100,
+    threshold: int = 128,
+    assignment: str = 'auto',
+    crop_zoom: float = 1,
+    crop_x: float = 0.5,
+    crop_y: float = 0.5,
+    frame_height: int | None = None,
+    fit: str = 'cover',
 ) -> PreparedImage:
     if rotation not in (0, 90, 180, 270):
         raise ValueError("Rotation must be 0, 90, 180 or 270 degrees clockwise")
@@ -68,13 +114,14 @@ def prepare_image(
     if not 0.1 <= vertical_scale <= 2.0:
         raise ValueError("Vertical scale must be between 0.1 and 2.0")
 
-    try:
-        source = Image.open(BytesIO(raw))
-        source.load()
-    except Exception as exc:
-        raise ValueError("The uploaded file is not a readable image") from exc
+    if not 1 <= threshold <= 255 or assignment not in ('auto', 'black', 'red', 'swap'):
+        raise ValueError('Invalid threshold or ink assignment')
+    if not 1 <= crop_zoom <= 4 or not 0 <= crop_x <= 1 or not 0 <= crop_y <= 1:
+        raise ValueError('Invalid crop position or zoom')
+    if fit not in ('cover', 'contain') or (frame_height is not None and not 32 <= frame_height <= 800):
+        raise ValueError('Invalid image frame')
+    source = load_source(raw)
 
-    source = ImageOps.exif_transpose(source).convert("RGBA")
     background = Image.new("RGBA", source.size, "white")
     background.alpha_composite(source)
     source = background.convert("RGB")
@@ -84,8 +131,27 @@ def prepare_image(
         source = ImageOps.mirror(source)
     if flip_vertical:
         source = ImageOps.flip(source)
+    if frame_height is not None:
+        target = (width, frame_height)
+        if fit == 'contain':
+            fitted = ImageOps.contain(source, target, Image.Resampling.LANCZOS)
+            source = Image.new('RGB', target, 'white')
+            source.paste(fitted, ((width - fitted.width) // 2, (frame_height - fitted.height) // 2))
+        else:
+            ratio = width / frame_height
+            cw = min(source.width, source.height * ratio) / crop_zoom
+            ch = cw / ratio
+            left = (source.width - cw) * crop_x
+            top = (source.height - ch) * crop_y
+            source = source.resize(target, Image.Resampling.LANCZOS,
+                                   box=(left, top, left + cw, top + ch))
     source = ImageEnhance.Brightness(source).enhance(brightness)
     source = ImageEnhance.Contrast(source).enhance(contrast)
+
+    if threshold != 128:
+        source = source.point([max(0, min(255, i + 128 - threshold)) for i in range(256)] * 3)
+    if assignment in ('black', 'red'):
+        two_color = False
 
     height = max(1, round(source.height * width / source.width * vertical_scale))
     if height > 1024:
@@ -113,6 +179,11 @@ def prepare_image(
             if color not in (BLACK, RED):
                 pixels[x, y] = WHITE
                 continue
+            if assignment == 'swap':
+                color = RED if color == BLACK else BLACK
+            elif assignment == 'red':
+                color = RED
+            pixels[x, y] = color
             amount = black_ink if color == BLACK else red_ink
             if (_BAYER_8[y % 8][x % 8] + 0.5) * 100 / 64 >= amount:
                 pixels[x, y] = WHITE
