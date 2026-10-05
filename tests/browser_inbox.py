@@ -74,12 +74,21 @@ def main():
                     expect(page.locator('#inbox-existing')).not_to_be_checked()
                     page.locator('#close-inbox').click()
                     page.locator('[data-mode="layout"]').click()
-                    Image.new('RGB', (80, 60), 'blue').save(folder / 'new.JfIf', 'JPEG')
+                    Image.new('RGB', (80, 60), 'blue').save(folder / 'new.JPG', 'JPEG')
                     expect(page.locator('.tray-photo')).to_have_count(2, timeout=15000)
-                    expect(page.locator('#tray-photos')).to_contain_text('new.JfIf')
+                    expect(page.locator('#tray-photos')).to_contain_text('new.JPG')
                     expect(page.locator('#photo-count')).to_have_text('0 / 3')
+                    photo_count = 2
+                    if sys.platform == 'darwin':
+                        png = Path(temp) / 'heic-source.png'
+                        Image.new('RGB', (80, 60), 'green').save(png)
+                        result = subprocess.run(['/usr/bin/sips', '-s', 'format', 'heic', str(png), '--out', str(folder / 'phone.HEIC')], capture_output=True, timeout=30)
+                        assert result.returncode == 0, result.stderr
+                        photo_count = 3
+                        expect(page.locator('.tray-photo')).to_have_count(photo_count, timeout=15000)
+                        expect(page.locator('#tray-photos')).to_contain_text('phone.HEIC')
                     page.reload()
-                    expect(page.locator('.tray-photo')).to_have_count(2)
+                    expect(page.locator('.tray-photo')).to_have_count(photo_count)
                     # Failed downloads do not mutate the receipt; a retry can succeed.
                     page.route('**/api/inbox/photos/*/working', lambda route: route.fulfill(status=503))
                     page.locator('.tray-photo button').first.click()

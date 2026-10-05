@@ -139,7 +139,8 @@
     if (cache.has(id)) return cache.get(id);
     const response = await fetch(`/api/inbox/photos/${id}/working`);
     if (!response.ok) throw new Error(`Could not load photo (HTTP ${response.status}). Try again.`);
-    const file = new File([await response.blob()], photos.find(p => p.id === id)?.name || 'photo.jpg', {type:'image/jpeg'});
+    const name = (photos.find(p => p.id === id)?.name || 'photo.jpg').replace(/\.(heic|heif)$/i, '.jpg');
+    const file = new File([await response.blob()], name, {type:'image/jpeg'});
     cache.set(id, file);
     // Bounded cache avoids repeat downloads without retaining the whole catalogue.
     while (cache.size > 12) cache.delete(cache.keys().next().value);

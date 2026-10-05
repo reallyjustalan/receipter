@@ -2,6 +2,8 @@ import io
 import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -99,12 +101,42 @@ class InboxTests(unittest.TestCase):
 
     def test_all_jpeg_extensions_case_insensitive(self):
         self.store.configure(str(self.folder), True)
-        extensions = ['jpg', 'JPEG', 'JpE', 'jfif', 'JIF', 'jFi']
+        extensions = ['jpg', 'JPG', 'JPEG', 'JpE', 'jfif', 'JIF', 'jFi']
         for index, extension in enumerate(extensions):
-            (self.folder / f'photo.{extension}').write_bytes(jpeg((index * 35, 50, 100)))
+            (self.folder / f'photo-{index}.{extension}').write_bytes(jpeg((index * 35, 50, 100)))
         self.settle()
         self.assertEqual(len(self.store.photos()), len(extensions))
         self.assertEqual(self.store.status()['error'], '')
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Uses macOS HEIC conversion')
+    def test_real_heic_auto_ingestion_and_api_preserve_original(self):
+        png = self.root / 'source.png'
+        Image.new('RGB', (800, 600), 'red').save(png)
+        heic = self.folder / 'camera.HEIC'
+        result = subprocess.run(['/usr/bin/sips', '-s', 'format', 'heic', str(png), '--out', str(heic)],
+                                capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        original = heic.read_bytes()
+        with patch.dict(os.environ, {'RECEIPTER_DATA_DIR': str(self.root / 'heic-api')}):
+            with TestClient(app) as client:
+                response = client.put('/api/inbox/settings', json={'folder': str(self.folder), 'enabled': True, 'import_existing': True})
+                self.assertEqual(response.status_code, 200)
+                with patch('receipter.imaging.WORKING_IMAGE_EDGE', 200):
+                    app.state.inbox.scan()
+                    app.state.inbox.scan()
+                self.assertEqual(app.state.inbox.status()['error'], '')
+                photos = client.get('/api/inbox/photos').json()
+                self.assertEqual(len(photos), 1)
+                photo_id = photos[0]['id']
+                saved_original = client.get(f'/api/inbox/photos/{photo_id}/original')
+                self.assertEqual(saved_original.headers['content-type'], 'image/heic')
+                self.assertEqual(saved_original.content, original)
+                working = client.get(f'/api/inbox/photos/{photo_id}/working')
+                self.assertEqual(working.headers['content-type'], 'image/jpeg')
+                with Image.open(io.BytesIO(working.content)) as image:
+                    self.assertEqual(image.format, 'JPEG')
+                    self.assertLessEqual(max(image.size), 200)
+                self.assertEqual(heic.read_bytes(), original)
 
     def test_supported_extension_still_requires_jpeg_content(self):
         self.store.configure(str(self.folder), True)

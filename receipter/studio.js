@@ -546,7 +546,7 @@
       const id = event.dataTransfer.getData(photoDragType);
       window.dispatchEvent(new CustomEvent('receipter-inbox-drop', {detail:{id, beforeId}}));
     } else {
-      const files = [...event.dataTransfer.files].filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|jpe|jfif|jif|jfi|webp|gif|bmp|svg)$/i.test(file.name));
+      const files = [...event.dataTransfer.files].filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|jpe|jfif|jif|jfi|heic|heif|webp|gif|bmp|svg)$/i.test(file.name));
       if (!files.length) { tell('Drop image files to add photos.'); return; }
       addPhotoFiles(files, beforeId); setMode('layout');
     }

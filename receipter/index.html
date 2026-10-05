@@ -49,24 +49,24 @@
     </details>
     <div id="message" role="log" aria-live="polite" aria-label="Output event log"></div>
   </footer>
-  <input id="photo-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg,.jpg,.jpeg,.jpe,.jfif,.jif,.jfi" multiple hidden>
-  <input id="asset-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg,.jpg,.jpeg,.jpe,.jfif,.jif,.jfi" hidden>
+  <input id="photo-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg,.jpg,.JPG,.jpeg,.JPEG,.jpe,.jfif,.jif,.jfi,.heic,.HEIC,.heif,.HEIF" multiple hidden>
+  <input id="asset-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg,.jpg,.JPG,.jpeg,.JPEG,.jpe,.jfif,.jif,.jfi,.heic,.HEIC,.heif,.HEIF" hidden>
   <script src="/editor.js"></script>
   <script src="/output-log.js"></script>
   <dialog id="photo-inbox" aria-labelledby="inbox-title">
     <div class="inbox-heading"><h2 id="inbox-title">Photo inbox</h2><button id="close-inbox">Close</button></div>
-    <p>Set NX Tether’s destination to this folder. New JPEGs appear automatically; nothing prints automatically. Supports .jpg, .jpeg, .jpe, .jfif, .jif and .jfi in any letter case.</p>
+    <p>Set NX Tether’s destination to this folder. New photos appear automatically; nothing prints automatically. Supports .jpg (including .JPG), .jpeg, .jpe, .jfif, .jif, .jfi, .heic and .heif in any letter case. HEIC/HEIF converts locally on the server Mac.</p>
     <form id="inbox-settings">
       <label>Folder path on this computer<input id="inbox-folder" type="text" placeholder="/Users/you/Pictures/Camera Inbox"></label>
-      <label><input id="inbox-enabled" type="checkbox" checked> Watch for new JPEGs</label>
-      <label><input id="inbox-existing" type="checkbox" checked> Include JPEGs already in this folder</label>
+      <label><input id="inbox-enabled" type="checkbox" checked> Watch for new photos (JPEG / HEIC)</label>
+      <label><input id="inbox-existing" type="checkbox" checked> Include photos already in this folder</label>
       <button type="submit">Save settings</button>
-      <button id="inbox-import" type="button">Import existing JPEGs</button>
+      <button id="inbox-import" type="button">Import existing photos</button>
     </form>
     <p id="inbox-status" role="status" aria-live="polite"></p>
     <button id="inbox-add" class="primary" disabled>Add selected to receipt</button>
     <button id="inbox-latest" disabled>Add latest photo</button>
-    <p>Up to three photos per receipt. Choose copies in Printer preview. Imported JPEGs are saved; receipt drafts still stay in this tab.</p>
+    <p>Up to three photos per receipt. Choose copies in Printer preview. Imported photos are saved; receipt drafts still stay in this tab.</p>
     <div id="inbox-photos"></div>
     <button id="inbox-more" hidden>Load more</button>
   </dialog>

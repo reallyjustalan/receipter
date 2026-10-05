@@ -1,4 +1,4 @@
-"""Local JPEG inbox. Camera transfer is handled by external tethering software."""
+"""Local photo inbox. Camera transfer is handled by external tethering software."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -18,6 +18,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from .imaging import load_source
+from .native_images import HEIF_EXTENSIONS, is_heif
 
 MAX_IMAGE = 20 * 1024 * 1024
 JPEG_EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.jfif', '.jif', '.jfi'}
@@ -58,7 +59,7 @@ class Inbox:
     @staticmethod
     def files(folder):
         return sorted(p for p in folder.iterdir() if not p.is_symlink() and p.is_file()
-                      and p.suffix.lower() in JPEG_EXTENSIONS)
+                      and p.suffix.lower() in JPEG_EXTENSIONS | HEIF_EXTENSIONS)
 
     def configure(self, folder: str, enabled: bool, import_existing: bool = False):
         # Finder/terminal paths are often pasted with surrounding quotes or spaces.
@@ -127,24 +128,28 @@ class Inbox:
                     continue  # Require two scans with unchanged size/mtime.
                 try:
                     if path.stat().st_size > MAX_IMAGE:
-                        raise ValueError('JPEG exceeds 20 MB')
+                        raise ValueError('Photo exceeds 20 MB')
                     with path.open('rb') as source:
                         raw = source.read(MAX_IMAGE + 1)
                     if len(raw) > MAX_IMAGE:
-                        raise ValueError('JPEG exceeds 20 MB')
+                        raise ValueError('Photo exceeds 20 MB')
                     if self.signature(path) != sig:
                         self.pending.pop(key, None)
                         continue
                     digest = hashlib.sha256(raw).hexdigest()
                     if not db.execute('SELECT 1 FROM photos WHERE digest=?', (digest,)).fetchone():
-                        with Image.open(io.BytesIO(raw)) as image:
-                            if image.format != 'JPEG':
-                                raise ValueError('Not a JPEG')
+                        if path.suffix.lower() in HEIF_EXTENSIONS:
+                            if not is_heif(raw):
+                                raise ValueError('Not a HEIC/HEIF photo')
+                        else:
+                            with Image.open(io.BytesIO(raw)) as image:
+                                if image.format != 'JPEG':
+                                    raise ValueError('Not a JPEG')
                         working = load_source(raw).convert('RGB')
                         thumb = working.copy()
                         thumb.thumbnail((320, 320), Image.Resampling.LANCZOS)
                         photo_id = uuid.uuid4().hex
-                        original = self.root / f'{photo_id}.jpg'
+                        original = original_path(self.root, photo_id, path.name)
                         thumbnail = self.root / f'{photo_id}.thumb.jpg'
                         working_path = self.root / f'{photo_id}.working.jpg'
                         try:
@@ -229,14 +234,21 @@ def image(photo_id: str, kind: str, request: Request):
         with store.lock:
             if not path.exists():
                 try:
-                    source = load_source((store.root / f'{photo_id}.jpg').read_bytes()).convert('RGB')
+                    source = load_source(original_path(store.root, photo_id, row[0]).read_bytes()).convert('RGB')
                     source.save(path, 'JPEG', quality=90, optimize=True)
                 except (ValueError, OSError) as exc:
                     path.unlink(missing_ok=True)
                     raise HTTPException(400, 'Could not prepare the saved photo') from exc
     else:
-        path = store.root / (f'{photo_id}.jpg' if kind == 'original' else f'{photo_id}.thumb.jpg')
-    return FileResponse(path, media_type='image/jpeg', filename=row[0] if kind != 'thumbnail' else None)
+        path = original_path(store.root, photo_id, row[0]) if kind == 'original' else store.root / f'{photo_id}.thumb.jpg'
+    suffix = Path(row[0]).suffix.lower()
+    mime = 'image/' + suffix[1:] if kind == 'original' and suffix in HEIF_EXTENSIONS else 'image/jpeg'
+    return FileResponse(path, media_type=mime, filename=row[0] if kind != 'thumbnail' else None)
+
+
+def original_path(root: Path, photo_id: str, name: str) -> Path:
+    suffix = Path(name).suffix.lower()
+    return root / (photo_id + (suffix if suffix in HEIF_EXTENSIONS else '.jpg'))
 
 
 def storage_path():

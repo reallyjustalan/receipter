@@ -15,7 +15,7 @@ Open <http://localhost:8022>. Run **one server process**, without multiple worke
 ## Documentation — Diátaxis
 
 - **Tutorial:** [Make your first photo receipt](docs/tutorials/first-receipt.md)
-- **How-to guides:** [Save receipt profiles](docs/how-to/receipt-profiles.md) · [Automatically ingest JPEGs](docs/how-to/photo-inbox.md) · [Edit a receipt](docs/how-to/edit-receipts.md) · [Run, test and troubleshoot](docs/how-to/operate.md)
+- **How-to guides:** [Save receipt profiles](docs/how-to/receipt-profiles.md) · [Automatically ingest JPEG/HEIC photos](docs/how-to/photo-inbox.md) · [Edit a receipt](docs/how-to/edit-receipts.md) · [Run, test and troubleshoot](docs/how-to/operate.md)
 - **Reference:** [Receipt model and API](docs/reference/receipt-api.md) · [Printer and diagnostic endpoints](docs/reference/printer.md)
 - **Explanation:** [Canonical rendering and preview architecture](docs/explanation/rendering.md) · [Receipt typography and font fidelity](docs/explanation/receipt-typography.md)
 

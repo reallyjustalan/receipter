@@ -8,6 +8,8 @@ from defusedxml import ElementTree
 import resvg_py
 import re
 
+from .native_images import convert_heif, is_heif
+
 CANONICAL_SCALE = 0.5
 WORKING_IMAGE_EDGE = 4096
 
@@ -19,6 +21,8 @@ def load_source(raw: bytes, raster_width: int = 1200) -> Image.Image:
     Pillow's decompression-bomb protections remain enabled for pathological inputs.
     """
     try:
+        if is_heif(raw):
+            raw = convert_heif(raw, WORKING_IMAGE_EDGE)
         raw = raw.removeprefix(b'\xef\xbb\xbf')
         if raw.lstrip().startswith(b'<'):
             if len(raw) > 2 * 1024 * 1024:
