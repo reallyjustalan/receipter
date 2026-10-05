@@ -8,6 +8,8 @@ import re
 import json
 from pathlib import Path
 import socket
+import os
+import tempfile
 import subprocess
 import sys
 import time
@@ -47,8 +49,9 @@ def main():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port = sock.getsockname()[1]
     base = f'http://127.0.0.1:{port}'
-    with open('/tmp/receipter-browser-server.log','w') as log:
-        server = subprocess.Popen([sys.executable,'-m','uvicorn','receipter.app:app','--port',str(port)],cwd=ROOT,stdout=log,stderr=log)
+    with tempfile.TemporaryDirectory(prefix='receipter-smoke-') as data, open('/tmp/receipter-browser-server.log','w') as log:
+        server = subprocess.Popen([sys.executable,'-m','uvicorn','receipter.app:app','--port',str(port)],cwd=ROOT,
+                                  env=dict(os.environ, RECEIPTER_DATA_DIR=data), stdout=log,stderr=log)
         try:
             for _ in range(100):
                 try:
@@ -93,6 +96,31 @@ def main():
                 page.get_by_role('button',name='Crop & process image').click()
                 expect(page.locator('#workspace')).to_have_attribute('data-mode','image')
                 expect(page.locator('#context-image')).to_be_visible()
+                expect(page.locator('#image-switcher button')).to_have_count(4)
+                expect(page.locator('#image-switcher').get_by_role('button', name='Edit Photo 3', exact=True)).to_have_attribute('aria-pressed', 'true')
+                # Switch photos directly in image mode, keeping per-photo adjustments.
+                picker = page.locator('#image-switcher')
+                picker.get_by_role('button', name='Edit Photo 1', exact=True).click()
+                expect(page.locator('#workspace')).to_have_attribute('data-mode', 'image')
+                page.locator('[data-edit="brightness"]').fill('0.75')
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                before_switch = len(renders)
+                picker.get_by_role('button', name='Edit Photo 2', exact=True).click()
+                expect(page.locator('[data-edit="brightness"]')).to_have_value('1')
+                page.wait_for_timeout(200)
+                assert len(renders) == before_switch, 'Selection alone must not re-render'
+                page.locator('[data-edit="brightness"]').fill('1.25')
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                page.locator('#context-overlays').get_by_role('button', name='Edit Photo 1', exact=True).click()
+                expect(page.locator('[data-edit="brightness"]')).to_have_value('0.75')
+                expect(picker.get_by_role('button', name='Edit Photo 1', exact=True)).to_have_attribute('aria-pressed', 'true')
+                picker.get_by_role('button', name='Edit Photo 2', exact=True).focus()
+                page.keyboard.press('Enter')
+                expect(page.locator('[data-edit="brightness"]')).to_have_value('1.25')
+                picker.get_by_role('button', name='Edit Header / logo', exact=True).click()
+                expect(page.locator('#image-name')).to_have_text('HEADER / LOGO')
+                picker.get_by_role('button', name='Edit Photo 3', exact=True).click()
+                expect(page.locator('[data-edit="brightness"]')).to_have_value('1')
                 # People-only processing is explicit and reversible; errors keep the original.
                 original_preview = page.locator('#receipt-image').get_attribute('src')
                 page.route('**/api/remove-background', lambda route: route.fulfill(
@@ -135,6 +163,12 @@ def main():
                 last_doc = json.loads(renders[-1].post_data_buffer.split(b'\r\n\r\n', 1)[1].split(b'\r\n--', 1)[0])
                 erased = next(b for b in last_doc['blocks'] if b['id'] == selected)
                 assert len(erased['edits']['eraser_strokes']) == 1
+                picker.get_by_role('button', name='Edit Photo 1', exact=True).click()
+                expect(page.locator('#undo-erasing')).to_be_disabled()
+                expect(page.locator('#image-tool')).to_have_value('erase')
+                picker.get_by_role('button', name='Edit Photo 3', exact=True).click()
+                expect(page.locator('#undo-erasing')).to_be_enabled()
+                page.wait_for_function("document.getElementById('image-canvas').width > 1")
                 page.locator('#reset-image').click()
                 expect(page.locator('#undo-erasing')).to_be_enabled()
                 page.locator('[data-edit="crop_zoom"]').fill('0.5')

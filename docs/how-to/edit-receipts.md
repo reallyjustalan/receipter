@@ -18,6 +18,8 @@ Use **Fit entire image** for an uncropped logo, or **Crop to fill** for a croppe
 
 Select a photo, then open **Image editor** or **Crop & process image**.
 
+In **02 Image editor**, click **Photo 1**, **Photo 2**, **Photo 3** (or **Header / logo**) in the thumbnail switcher to edit another image without leaving this view. You can also click its section in the small **In your receipt** preview. The selected thumbnail is highlighted. Buttons support keyboard Tab/Enter and touch. Crop, tone, colour and eraser edits remain independent for each image; switching does not reset them or apply changes to every photo. The current crop/erase tool stays selected.
+
 - Set **Frame height** in layout mode to change its height on paper.
 - Choose **Crop to fill**. **Image zoom** ranges from **0.25× to 4×**. Values below 1 shrink the photo relative to its fill size, leaving white space where it no longer fills the frame. Values above 1 magnify it. Drag the preview in **Move / crop** mode or use horizontal/vertical position sliders to position it. This changes the printed photo; the toolbar's **View** zoom only changes screen magnification. If an axis exactly fits, its position control has no visible effect until zoom or frame dimensions change.
 - Choose **Fit entire image** to retain the entire image with white surround. Crop controls are disabled in this mode.

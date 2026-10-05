@@ -68,9 +68,16 @@ hr, .item-row, .total { border: 0; border-top: 1px solid #ddd; margin-top: 20px;
 .image-editor-heading { margin: 20px 0; align-items: center; }
 .image-workbench { display: grid; grid-template-columns: minmax(0, 1fr) 144px; align-items: start; gap: 24px; }
 #image-canvas { display: block; width: 100%; height: auto; background: white; image-rendering: pixelated; touch-action: none; cursor: move; }
-#context-paper { position: relative; }
+#context-paper { position: relative; width: 144px; }
 #context-image { display: block; image-rendering: pixelated; width: 144px; }
-#context-selection { position: absolute; left: 0; width: 100%; border: 1px solid #a22; pointer-events: none; }
+#context-selection { position: absolute; left: 0; width: 100%; border: 1px solid #a22; pointer-events: none; z-index: 2; }
+#image-switcher { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+#image-switcher button { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+#image-switcher img { width: 48px; height: 40px; object-fit: contain; }
+#image-switcher button[aria-pressed="true"] { outline: 2px solid #a22; outline-offset: -2px; }
+#context-overlays { position: absolute; inset: 0; }
+#context-overlays button { position: absolute; left: 0; width: 100%; min-height: 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+#context-overlays button:hover, #context-overlays button:focus-visible { background: #a221; outline: 2px solid #a22; outline-offset: -2px; }
 .app-footer { position: fixed; inset: auto 0 0; z-index: 30; background: #fafafa; border-top: 1px solid #bbb; box-shadow: 0 -2px 5px #0001; padding: 10px 16px; font-size: 12px; }
 .footer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .footer-toolbar strong { margin-right: auto; }

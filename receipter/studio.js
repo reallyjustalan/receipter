@@ -21,6 +21,7 @@
   let selected = documentState.blocks[0].id;
   const assets = new Map();
   const originalImages = new Map();
+  const editorThumbnails = new Map();
   const backgroundJobs = new Set();
   let imageTool = 'crop', brushSize = 3, eraseSource = null, eraseDrag = null;
   const automaticDates = new Set();
@@ -51,9 +52,35 @@
     $('add-photos').disabled = count >= 3 || documentState.blocks.length >= 16;
     document.querySelectorAll('[data-add]').forEach(b => b.disabled = documentState.blocks.length >= 16);
     document.querySelector('[data-mode="image"]').disabled = !selectedBlock()?.asset;
+    renderImageSwitcher();
   }
 
+  function imageLabel(block) {
+    return block?.type === 'header' ? 'Header / logo' : `Photo ${documentState.blocks.filter(b => b.type === 'photo').findIndex(b => b.id === block?.id) + 1}`;
+  }
+  function renderImageSwitcher() {
+    const editable = documentState.blocks.filter(b => (b.type === 'photo' || b.type === 'header') && assets.has(b.asset));
+    const used = new Set(editable.map(b => assets.get(b.asset)));
+    for (const [file, url] of editorThumbnails) {
+      if (!used.has(file)) { URL.revokeObjectURL(url); editorThumbnails.delete(file); }
+    }
+    const picker = $('image-switcher');
+    picker.replaceChildren();
+    for (const block of editable) {
+      const file = assets.get(block.asset);
+      if (!editorThumbnails.has(file)) editorThumbnails.set(file, URL.createObjectURL(file));
+      const button = document.createElement('button');
+      button.type = 'button'; button.dataset.imageSelect = block.id;
+      button.setAttribute('aria-pressed', String(block.id === selected));
+      button.setAttribute('aria-label', `Edit ${imageLabel(block)}`);
+      const image = document.createElement('img');
+      image.src = editorThumbnails.get(file); image.alt = ''; image.onerror = () => { image.hidden = true; };
+      const label = document.createElement('span'); label.textContent = imageLabel(block);
+      button.append(image, label); picker.append(button);
+    }
+  }
   function selectBlock(id) {
+    cropDrag = null; eraseDrag = null;
     selected = id;
     if (mode === 'image' && !selectedBlock()?.asset) mode = 'layout';
     renderList(); renderMode(); renderInspector(); paintPreview();
@@ -116,7 +143,7 @@
       if ($('restore-background')) $('restore-background').onclick = () => {
         assets.set(b.asset, originalImages.get(b.asset));
         originalImages.delete(b.asset);
-        renderInspector(); changed();
+        renderImageSwitcher(); renderInspector(); changed();
       };
       panel.querySelectorAll('[data-edit]').forEach(input => input.oninput = () => {
         const key = input.dataset.edit;
@@ -199,7 +226,7 @@
       if (block.asset !== id || assets.get(id) !== file || !documentState.blocks.includes(block)) return;
       originalImages.set(id, file);
       assets.set(id, result);
-      changed();
+      renderImageSwitcher(); changed();
       tell('Background removed. Check the people and edges in the preview; restore the original if needed.');
     } catch (error) {
       tell(`Background removal failed: ${error.message}. Original image unchanged.`);
@@ -330,7 +357,10 @@
     }
   }
   function paintPreview() {
-    if (mode === 'image') loadEditorSource();
+    if (mode === 'image') {
+      $('image-name').textContent = `${imageTool === 'erase' ? 'ERASER / ' : ''}${imageLabel(selectedBlock()).toUpperCase()}`;
+      loadEditorSource();
+    }
     if (mode === 'image' && imageTool === 'erase') paintEraseCanvas();
     else {
       $('image-canvas').style.cursor = 'move';
@@ -339,7 +369,15 @@
     // Display dots with 1:2 pixel aspect for mode 1. Zoom only changes CSS sizes.
     // Neither this function nor the zoom handler requests or quantizes an image.
     const proof = snapshot;
-    if (!proof) return;
+    if (!proof) {
+      $('context-overlays').replaceChildren();
+      if (mode === 'image' && imageTool !== 'erase') {
+        // Do not show the previous photo while a newly selected one is rendering.
+        $('image-canvas').getContext('2d').clearRect(0, 0, $('image-canvas').width, $('image-canvas').height);
+        $('image-help').textContent = 'Updating the selected image…';
+      }
+      return;
+    }
     $('paper').style.width = `${proof.width * zoom}px`;
     $('receipt-image').style.width = `${proof.width * zoom}px`;
     $('receipt-image').style.height = `${proof.height * 2 * zoom}px`;
@@ -351,14 +389,25 @@
       $('context-image').style.height = `${proof.height * 2 * 144 / proof.width}px`;
       $('context-selection').style.top = `${section.y * 2 * 144 / proof.width}px`;
       $('context-selection').style.height = `${section.height * 2 * 144 / proof.width}px`;
-      if (imageTool === 'erase') { $('image-name').textContent = 'ERASER / ORIGINAL IMAGE'; return; }
+      $('context-overlays').replaceChildren();
+      for (const part of proof.blocks) {
+        const block = documentState.blocks.find(b => b.id === part.id);
+        if (!block || !assets.has(block.asset)) continue;
+        const button = document.createElement('button');
+        button.type = 'button'; button.dataset.imageSelect = block.id;
+        button.setAttribute('aria-label', `Edit ${imageLabel(block)}`);
+        button.setAttribute('aria-pressed', String(block.id === selected));
+        button.style.top = `${part.y * 2 * 144 / proof.width}px`;
+        button.style.height = `${part.height * 2 * 144 / proof.width}px`;
+        $('context-overlays').append(button);
+      }
+      if (imageTool === 'erase') return;
       const canvas = $('image-canvas');
       canvas.width = proof.width*2;
       canvas.height = section.height*4;
       const context = canvas.getContext('2d');
       context.imageSmoothingEnabled = false;
       context.drawImage(proof.image, 0, section.y*2, proof.width*2, section.height*2, 0, 0, canvas.width, canvas.height);
-      $('image-name').textContent = selectedBlock()?.type==='header' ? 'HEADER / LOGO' : 'PHOTO / '+(documentState.blocks.filter(b=>b.type==='photo').findIndex(b=>b.id===selected)+1);
     }
   }
 
@@ -468,6 +517,15 @@
     }
   };
   $('section-overlays').onclick = event => { const id = event.target.dataset.select; if (id) selectBlock(id); };
+  for (const element of [$('image-switcher'), $('context-overlays')]) {
+    element.onclick = event => {
+      const id = event.target.closest('[data-image-select]')?.dataset.imageSelect;
+      if (id && id !== selected) {
+        selectBlock(id);
+        element.querySelector(`[data-image-select="${id}"]`)?.focus({preventScroll:true});
+      }
+    };
+  }
   let dragging = null;
   $('sections').ondragstart = event => { dragging = event.target.closest('li')?.dataset.id; event.dataTransfer.setData('text/plain',dragging||''); event.dataTransfer.effectAllowed = 'move'; };
   $('sections').ondragover = event => { if (!dragging) return; event.preventDefault(); event.target.closest('li')?.classList.add('drag-over'); };
@@ -583,7 +641,7 @@
       changed(); paintEraseCanvas();
       return;
     }
-    if (!block?.edits || block.edits.fit !== 'cover') return;
+    if (!snapshot || !block?.edits || block.edits.fit !== 'cover') return;
     cropDrag = {x:event.clientX,y:event.clientY,cx:block.edits.crop_x,cy:block.edits.crop_y,id:block.id};
     $('image-canvas').setPointerCapture(event.pointerId);
   };
