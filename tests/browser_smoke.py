@@ -93,6 +93,64 @@ def main():
                 page.get_by_role('button',name='Crop & process image').click()
                 expect(page.locator('#workspace')).to_have_attribute('data-mode','image')
                 expect(page.locator('#context-image')).to_be_visible()
+                # People-only processing is explicit and reversible; errors keep the original.
+                original_preview = page.locator('#receipt-image').get_attribute('src')
+                page.route('**/api/remove-background', lambda route: route.fulfill(
+                    status=400, json={'detail':'No people detected'}))
+                page.locator('#remove-background').click()
+                expect(page.locator('#message')).to_contain_text('No people detected')
+                expect(page.locator('#remove-background')).to_be_enabled()
+                assert page.locator('#receipt-image').get_attribute('src') == original_preview
+                page.unroute('**/api/remove-background')
+                cutout = BytesIO()
+                Image.new('RGBA', (720,480), (0,0,0,0)).save(cutout, 'PNG')
+                page.route('**/api/remove-background', lambda route: route.fulfill(
+                    content_type='image/png', body=cutout.getvalue()))
+                page.locator('#remove-background').click()
+                expect(page.locator('#restore-background')).to_be_visible()
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                assert page.locator('#receipt-image').get_attribute('src') != original_preview
+                page.locator('#restore-background').click()
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                assert page.locator('#receipt-image').get_attribute('src') == original_preview
+                # Zoom below one changes the print, not only the editor view.
+                page.locator('[data-edit="crop_zoom"]').fill('0.5')
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                zoomed_preview = page.locator('#receipt-image').get_attribute('src')
+                assert zoomed_preview != original_preview
+                # Erase source-image marks, retain them across tone resets, then undo.
+                page.locator('#image-tool').select_option('erase')
+                page.wait_for_function("document.getElementById('image-canvas').width > 1")
+                page.locator('#eraser-size').fill('20')
+                canvas = page.locator('#image-canvas')
+                canvas.scroll_into_view_if_needed()
+                box = canvas.bounding_box()
+                page.mouse.move(box['x']+box['width']*.3, box['y']+box['height']*.6)
+                page.mouse.down()
+                page.mouse.move(box['x']+box['width']*.7, box['y']+box['height']*.6, steps=10)
+                page.mouse.up()
+                expect(page.locator('#undo-erasing')).to_be_enabled()
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                assert page.locator('#receipt-image').get_attribute('src') != zoomed_preview
+                last_doc = json.loads(renders[-1].post_data_buffer.split(b'\r\n\r\n', 1)[1].split(b'\r\n--', 1)[0])
+                erased = next(b for b in last_doc['blocks'] if b['id'] == selected)
+                assert len(erased['edits']['eraser_strokes']) == 1
+                page.locator('#reset-image').click()
+                expect(page.locator('#undo-erasing')).to_be_enabled()
+                page.locator('[data-edit="crop_zoom"]').fill('0.5')
+                page.locator('#undo-erasing').click()
+                expect(page.locator('#undo-erasing')).to_be_disabled()
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                assert page.locator('#receipt-image').get_attribute('src') == zoomed_preview
+                # A single click also erases; reset restores it.
+                canvas.scroll_into_view_if_needed()
+                canvas.click(position={'x':box['width']*.5, 'y':box['height']*.5})
+                expect(page.locator('#reset-erasing')).to_be_enabled()
+                page.locator('#reset-erasing').click()
+                expect(page.locator('#reset-erasing')).to_be_disabled()
+                expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                assert page.locator('#receipt-image').get_attribute('src') == zoomed_preview
+                page.locator('#image-tool').select_option('crop')
                 page.locator('[data-edit="crop_zoom"]').fill('1.8')
                 page.locator('[data-edit="crop_x"]').fill('0.2')
                 page.locator('[data-edit="threshold"]').fill('155')

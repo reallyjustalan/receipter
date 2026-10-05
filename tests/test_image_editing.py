@@ -99,6 +99,64 @@ class ImageEditingTests(unittest.TestCase):
         self.assertEqual(set(prepare(transparent).colors.tobytes()), {WHITE})
         self.assertNotIn(RED, prepare(two_color=False).colors.tobytes())
 
+    def test_zoom_out_leaves_white_padding_and_moves_inside_frame(self):
+        raw = png(Image.new('RGB', (64, 64), 'black'))
+        for zoom in (.25, .5, 1):
+            result = prepare_image(raw, width=64, vertical_scale=1, frame_height=64,
+                                   crop_zoom=zoom, dither=False).colors
+            self.assertEqual(result.size, (64, 64))
+            self.assertEqual(result.tobytes().count(BLACK), round(64*zoom)**2)
+        result = prepare_image(raw, width=64, vertical_scale=1, frame_height=64,
+                               crop_zoom=.5, crop_x=0, crop_y=1, dither=False,
+                               brightness=.2, threshold=255).colors
+        self.assertEqual(result.getpixel((0, 63)), BLACK)
+        self.assertEqual(result.getpixel((63, 0)), WHITE)
+
+    def test_eraser_stays_white_under_dark_tone_and_ink_assignment(self):
+        raw = png(Image.new('RGB', (64, 64), 'black'))
+        strokes = [{'radius':.1, 'points':[(.25,.5), (.75,.5)]}]
+        for assignment in ('auto', 'black', 'red', 'swap'):
+            result = prepare_image(raw, width=64, vertical_scale=1, dither=False,
+                                   brightness=.2, threshold=255, assignment=assignment,
+                                   eraser_strokes=strokes).colors
+            self.assertEqual(result.getpixel((32,32)), WHITE)
+            self.assertNotEqual(result.getpixel((0,0)), WHITE)
+        self.assertEqual(Image.open(BytesIO(raw)).getpixel((32,32)), (0,0,0))
+
+    def test_eraser_tracks_rotation_flip_crop_and_zoom(self):
+        raw = png(Image.new('RGB', (64, 32), 'black'))
+        strokes = [{'radius':.08, 'points':[(.25,.25)]}]
+        result = prepare_image(raw, width=32, vertical_scale=1, frame_height=64,
+                               rotation=90, dither=False, eraser_strokes=strokes).colors
+        self.assertEqual(result.getpixel((24,16)), WHITE)
+        self.assertEqual(result.getpixel((8,48)), BLACK)
+        result = prepare_image(raw, width=32, vertical_scale=1, frame_height=64,
+                               rotation=90, flip_horizontal=True, dither=False,
+                               eraser_strokes=strokes).colors
+        self.assertEqual(result.getpixel((8,16)), WHITE)
+        result = prepare_image(raw, width=64, vertical_scale=1, frame_height=32,
+                               crop_zoom=.5, dither=False, eraser_strokes=strokes).colors
+        self.assertEqual(result.getpixel((24,12)), WHITE)
+        self.assertEqual(result.getpixel((40,20)), BLACK)
+        result = prepare_image(raw, width=64, vertical_scale=1, frame_height=32,
+                               crop_zoom=2, crop_x=0, crop_y=0, dither=False,
+                               eraser_strokes=strokes).colors
+        self.assertEqual(result.getpixel((32,16)), WHITE)
+
+    def test_eraser_and_zoom_model_limits(self):
+        from receipter.receipt import ImageEdits
+        from pydantic import ValidationError
+        for zoom in (.25, .5, 1, 4):
+            self.assertEqual(ImageEdits(crop_zoom=zoom).crop_zoom, zoom)
+        for values in [dict(crop_zoom=.2), dict(crop_zoom=4.1),
+                       dict(eraser_strokes=[{'radius':.1, 'points':[]}]),
+                       dict(eraser_strokes=[{'radius':.1, 'points':[(1.1,0)]}]),
+                       dict(eraser_strokes=[{'radius':float('nan'), 'points':[(0,0)]}]),
+                       dict(eraser_strokes=[{'radius':.1, 'points':[(0,0)]*257}]),
+                       dict(eraser_strokes=[{'radius':.1, 'points':[(0,0)]}]*101)]:
+            with self.subTest(values=values), self.assertRaises(ValidationError):
+                ImageEdits(**values)
+
     def test_invalid_edit_settings_are_rejected(self):
         for edits in [dict(rotation=45), dict(brightness=0), dict(brightness=float('nan')),
                       dict(contrast=3), dict(black_ink=-1), dict(red_ink=101)]:

@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
 from .imaging import BLACK, CANONICAL_SCALE, PreparedImage, _palette, _preview, prepare_image
-from .receipt_font import LINE_ROWS, draw_text, normalize, text_width
+from .receipt_font import ADVANCE, LINE_ROWS, draw_text, normalize, text_width
 
 WIDTH = 400
 MARGIN = 16
@@ -17,6 +17,15 @@ MAX_ROWS = 1024
 
 class Model(BaseModel):
     model_config = ConfigDict(extra='forbid')
+
+
+Unit = Annotated[float, Field(ge=0, le=1)]
+
+
+class EraserStroke(Model):
+    # Source-image coordinates, before crop/rotation; radius / longest side.
+    radius: float = Field(ge=.001, le=.25)
+    points: list[tuple[Unit, Unit]] = Field(min_length=1, max_length=256)
 
 
 class ImageEdits(Model):
@@ -30,17 +39,22 @@ class ImageEdits(Model):
     assignment: Literal['auto', 'black', 'red', 'swap'] = 'auto'
     black_ink: float = Field(100, ge=0, le=100)
     red_ink: float = Field(100, ge=0, le=100)
-    crop_zoom: float = Field(1, ge=1, le=4)
+    crop_zoom: float = Field(1, ge=.25, le=4)
     crop_x: float = Field(.5, ge=0, le=1)
     crop_y: float = Field(.5, ge=0, le=1)
     fit: Literal['cover', 'contain'] = 'cover'
+    eraser_strokes: list[EraserStroke] = Field(default_factory=list, max_length=100)
 
 
 class Block(Model):
     id: str = Field(min_length=1, max_length=64, pattern=r'^[a-zA-Z0-9_-]+$')
 
 
-class Photo(Block):
+class TextStyle(Block):
+    font_size: Literal['normal', 'large'] = 'normal'
+
+
+class Photo(TextStyle):
     type: Literal['photo'] = 'photo'
     asset: str = Field(min_length=1, max_length=64)
     height: int = Field(240, ge=32, le=800)
@@ -48,9 +62,10 @@ class Photo(Block):
     caption: str = Field('', max_length=100)
 
 
-class Header(Block):
+class Header(TextStyle):
     type: Literal['header'] = 'header'
     title: str = Field('THE PHOTO BOOTH', max_length=100)
+    title_font: Literal['custom', 'native'] = 'custom'
     subtitle: str = Field('', max_length=160)
     asset: str | None = Field(None, min_length=1, max_length=64)
     height: int = Field(100, ge=32, le=800)
@@ -63,7 +78,7 @@ class Item(Model):
     price: Decimal = Field(Decimal('0.00'), ge=0, max_digits=8, decimal_places=2)
 
 
-class Footer(Block):
+class Footer(TextStyle):
     type: Literal['footer'] = 'footer'
     items: list[Item] = Field(default_factory=list, max_length=12)
     currency: str = Field('$', max_length=4)
@@ -72,12 +87,12 @@ class Footer(Block):
     text: str = Field('THANK YOU', max_length=400)
 
 
-class Text(Block):
+class Text(TextStyle):
     type: Literal['text'] = 'text'
     text: str = Field('Receipt text', max_length=600)
 
 
-class Signature(Block):
+class Signature(TextStyle):
     type: Literal['signature'] = 'signature'
     label: str = Field('Signature', max_length=80)
 
@@ -96,26 +111,52 @@ class Receipt(Model):
 
 class TextCanvas:
     """Draw glyphs at printer resolution; keep the section cursor in layout units."""
-    def __init__(self):
+    def __init__(self, font_size='normal'):
         self.image = Image.new('P', (WIDTH - 2 * MARGIN, MAX_ROWS), 0)
         self.image.putpalette(_palette().getpalette())
         self.draw = ImageDraw.Draw(self.image)
         self.y = 8
+        self.font_size = font_size
+        self.native = True
+        self.runs = []
+
+    @property
+    def scale(self):
+        return 2 if self.native and self.font_size == 'large' else 1
+
+    def glyphs(self, x, row, text):
+        if self.scale == 1:
+            draw_text(self.image, x, row, text, BLACK)
+        elif text:
+            glyphs = Image.new('P', (text_width(text), LINE_ROWS), 0)
+            glyphs.putpalette(self.image.getpalette())
+            draw_text(glyphs, 0, 0, text, BLACK)
+            self.image.paste(glyphs.resize((glyphs.width * 2, glyphs.height * 2),
+                                          Image.Resampling.NEAREST), (x, row))
+
+    def record(self, text, row, center=False):
+        if self.native:
+            from .escpos import encode_native_text
+            self.runs.append((row, row + LINE_ROWS * self.scale,
+                              encode_native_text([text], font_size=self.font_size,
+                                                 center=center, padding=False)))
 
     def line(self, text: str, *, center=False):
         for paragraph in normalize(text).split('\n'):
             pending = ''
             for char in paragraph:
-                if text_width(pending + char) > self.image.width:
+                if text_width(pending + char) * self.scale > self.image.width:
                     self._line(pending, center)
                     pending = ''
                 pending += char
             self._line(pending, center)
 
     def _line(self, text, center):
-        x = (self.image.width - text_width(text)) // 2 if center else 0
-        draw_text(self.image, x, round(self.y * CANONICAL_SCALE), text, BLACK)
-        self.y += round(LINE_ROWS / CANONICAL_SCALE)
+        x = (self.image.width - text_width(text) * self.scale) // 2 if center else 0
+        row = round(self.y * CANONICAL_SCALE)
+        self.glyphs(x, row, text)
+        self.record(text, row, center)
+        self.y += round(LINE_ROWS * self.scale / CANONICAL_SCALE)
         if self.y > 2000:
             raise ValueError('Text section is too long')
 
@@ -128,16 +169,18 @@ class TextCanvas:
     def amount(self, label, amount):
         # Reserve a separate row if the label cannot fit alongside the amount.
         label, amount = normalize(label), normalize(amount)
-        aw = text_width(amount)
+        aw = text_width(amount) * self.scale
         if '\n' in amount or aw > self.image.width:
             raise ValueError('Receipt amount is too wide or contains a newline')
-        if '\n' in label or text_width(label) + aw + 20 > self.image.width:
+        columns = self.image.width // (ADVANCE * self.scale)
+        if ('\n' in label or len(label) + len(amount) + 2 > columns):
             self.line(label)
             label = ''
         row = round(self.y * CANONICAL_SCALE)
-        draw_text(self.image, 0, row, label, BLACK)
-        draw_text(self.image, self.image.width - aw, row, amount, BLACK)
-        self.y += round(LINE_ROWS / CANONICAL_SCALE)
+        self.glyphs(0, row, label)
+        self.glyphs(self.image.width - aw, row, amount)
+        self.record(label + ' ' * max(0, columns - len(label) - len(amount)) + amount, row)
+        self.y += round(LINE_ROWS * self.scale / CANONICAL_SCALE)
         if self.y > 2000:
             raise ValueError('Text section is too long')
 
@@ -157,6 +200,7 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
         raise ValueError('A receipt supports up to three photos')
     pieces = []
     metadata = []
+    native_text = []
     y = 8
     for block in document.blocks:
         start = y
@@ -167,10 +211,12 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
             section.append(prepare_image(assets[block.asset], WIDTH - 2 * MARGIN,
                                          CANONICAL_SCALE, frame_height=block.height,
                                          **block.edits.model_dump()).colors)
-        text = TextCanvas()
+        text = TextCanvas(getattr(block, 'font_size', 'normal'))
         if isinstance(block, Header):
             if block.title:
+                text.native = block.title_font == 'native'
                 text.line(block.title, center=True)
+                text.native = True
             if block.subtitle:
                 text.line(block.subtitle, center=True)
             text.rule()
@@ -182,7 +228,8 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
             for item in block.items:
                 cost = item.price * item.quantity
                 total += cost
-                text.amount(f'{item.quantity} × {item.label}', f'{block.currency}{cost:.2f}')
+                # ASCII avoids printer-dependent code-page mappings for U+00D7.
+                text.amount(f'{item.quantity} x {item.label}', f'{block.currency}{cost:.2f}')
             text.rule()
             text.amount('TOTAL', f'{block.currency}{total:.2f}')
             text.rule()
@@ -201,6 +248,9 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
         elif isinstance(block, Spacer):
             text.y += block.height
         if text.y > 8:
+            text_top = y + sum(image.height for image in section)
+            native_text.extend((text_top + start, text_top + end, commands)
+                               for start, end, commands in text.runs)
             section.append(text.prepared())
         for image in section:
             pieces.append((y, image))
@@ -214,4 +264,4 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
     colors.putpalette(_palette().getpalette())
     for top, image in pieces:
         colors.paste(image, (MARGIN, top))
-    return PreparedImage(colors, _preview(colors)), metadata
+    return PreparedImage(colors, _preview(colors), tuple(native_text)), metadata

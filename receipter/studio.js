@@ -20,6 +20,9 @@
   let documentState = {blocks:[newBlock('header'), newBlock('footer'), newBlock('signature')]};
   let selected = documentState.blocks[0].id;
   const assets = new Map();
+  const originalImages = new Map();
+  const backgroundJobs = new Set();
+  let imageTool = 'crop', brushSize = 3, eraseSource = null, eraseDrag = null;
   const automaticDates = new Set();
   let mode = 'layout', zoom = Number($('zoom').value), revision = 0, timer, controller, snapshot = null;
   let previewError = '', busy = false, dirty = false, status = null, statusError = '', stoppedLocally = false;
@@ -90,7 +93,7 @@
     const panel = $('inspector-content');
     const b = selectedBlock();
     if (mode === 'final') {
-      panel.innerHTML = `<p class="eyebrow">PRINT SETTINGS</p><h2>The final receipt</h2><p class="muted">The full receipt on the left is the exact dot map sent to the printer. Nothing is re-rendered when you print.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Bitmap text approximates the printer’s built-in font; it is not Epson ROM lettering. Preview dots match the sent image; ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
+      panel.innerHTML = `<p class="eyebrow">PRINT SETTINGS</p><h2>The final receipt</h2><p class="muted">The receipt on the left previews the saved artwork and native text. Nothing is re-rendered when you print; built-in printer lettering is approximate on screen.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Custom titles and artwork print as images. Built-in titles and other text use the printer’s font and selected size; preview glyph shapes and alignment may differ. Ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
       $('cut').onchange = () => { finishing.cut = $('cut').checked; if (finishing.cut) finishing.feed_lines = Math.max(8, finishing.feed_lines); renderInspector(); };
       $('feed-lines').oninput = () => { finishing.feed_lines = Number($('feed-lines').value); updatePrint(); };
       $('copies').oninput = () => { finishing.copies = Number($('copies').value); updatePrint(); };
@@ -102,7 +105,19 @@
     if (!b) { panel.innerHTML = '<h2>Empty receipt</h2><p class="muted">Add a section to begin your receipt.</p>'; return; }
     if (mode === 'image') {
       const e = b.edits;
-      panel.innerHTML = `<p class="eyebrow">JUST THIS IMAGE</p><h2>Image settings</h2><p class="muted">Independent settings for this ${b.type==='header'?'logo':'photo'}. Preview updates as you edit.</p>${select('Frame fit','fit',e.fit,[['cover','Crop to fill'],['contain','Fit entire image (white surround)']])}<div id="crop-controls">${range('Crop zoom','crop_zoom',e.crop_zoom,1,4,.05)}${range('Horizontal position','crop_x',e.crop_x,0,1,.01)}${range('Vertical position','crop_y',e.crop_y,0,1,.01)}</div>${select('Rotate clockwise','rotation',e.rotation,[[0,'Original'],[90,'90°'],[180,'180°'],[270,'270°']])}${check('Mirror left / right','flip_horizontal',e.flip_horizontal)}${check('Flip top / bottom','flip_vertical',e.flip_vertical)}<hr><h3>Tone & texture</h3>${range('Brightness','brightness',e.brightness,.2,2,.05)}${range('Contrast','contrast',e.contrast,.2,2,.05)}${range('Threshold / ink bias','threshold',e.threshold,1,255)}${check('Floyd–Steinberg dithering','dither',e.dither)}<p class="muted">Turn dithering off for crisp logos. A higher threshold adds ink; 128 is neutral.</p><hr><h3>Ribbon colours</h3>${select('Assign ink','assignment',e.assignment,[['auto','Automatic black + red'],['black','Black only'],['red','Red only'],['swap','Swap black ↔ red']])}${range('Black ink remaining (%)','black_ink',e.black_ink,0,100)}${range('Red ink remaining (%)','red_ink',e.red_ink,0,100)}<button id="reset-image" class="wide">Reset image adjustments</button>`;
+      panel.innerHTML = `<p class="eyebrow">JUST THIS IMAGE</p><h2>Image settings</h2><p class="muted">Independent settings for this ${b.type==='header'?'logo':'photo'}. Preview updates as you edit.</p>${select('Frame fit','fit',e.fit,[['cover','Crop to fill'],['contain','Fit entire image (white surround)']])}<div id="crop-controls">${range('Image zoom','crop_zoom',e.crop_zoom,.25,4,.05)}${range('Horizontal position','crop_x',e.crop_x,0,1,.01)}${range('Vertical position','crop_y',e.crop_y,0,1,.01)}</div>${select('Rotate clockwise','rotation',e.rotation,[[0,'Original'],[90,'90°'],[180,'180°'],[270,'270°']])}${check('Mirror left / right','flip_horizontal',e.flip_horizontal)}${check('Flip top / bottom','flip_vertical',e.flip_vertical)}<hr><h3>Tone & texture</h3>${range('Brightness','brightness',e.brightness,.2,2,.05)}${range('Contrast','contrast',e.contrast,.2,2,.05)}${range('Threshold / ink bias','threshold',e.threshold,1,255)}${check('Floyd–Steinberg dithering','dither',e.dither)}<p class="muted">Turn dithering off for crisp logos. A higher threshold adds ink; 128 is neutral.</p><hr><h3>Ribbon colours</h3>${select('Assign ink','assignment',e.assignment,[['auto','Automatic black + red'],['black','Black only'],['red','Red only'],['swap','Swap black ↔ red']])}${range('Black ink remaining (%)','black_ink',e.black_ink,0,100)}${range('Red ink remaining (%)','red_ink',e.red_ink,0,100)}<button id="reset-image" class="wide">Reset image adjustments</button>`;
+      panel.insertAdjacentHTML('beforeend', `<hr><h3>Clean up image</h3><label>Tool<select id="image-tool"><option value="crop" ${imageTool==='crop'?'selected':''}>Move / crop</option><option value="erase" ${imageTool==='erase'?'selected':''}>Erase</option></select></label><label>Brush diameter (% of image)<input id="eraser-size" type="range" min="1" max="20" step="1" value="${brushSize}"><output id="eraser-size-value">${brushSize}%</output></label><button id="undo-erasing" ${e.eraser_strokes?.length?'':'disabled'}>Undo last erase</button><button id="reset-erasing" ${e.eraser_strokes?.length?'':'disabled'}>Reset erasing</button><p class="muted">Erase on the original image; the receipt context shows the printed result. Erasing follows the image through crop, zoom and rotation. Up to 100 strokes per image.</p>`);
+      $('image-tool').onchange = () => { imageTool = $('image-tool').value; paintPreview(); };
+      $('eraser-size').oninput = () => { brushSize = Number($('eraser-size').value); $('eraser-size-value').textContent = `${brushSize}%`; };
+      $('undo-erasing').onclick = () => { b.edits.eraser_strokes.pop(); renderInspector(); paintPreview(); changed(); };
+      $('reset-erasing').onclick = () => { b.edits.eraser_strokes = []; renderInspector(); paintPreview(); changed(); };
+      panel.insertAdjacentHTML('afterbegin', `<h3>Keep people only</h3><button id="remove-background" class="wide" ${backgroundJobs.has(b.asset)||originalImages.has(b.asset)?'disabled':''}>${backgroundJobs.has(b.asset)?'Removing background…':'Remove background'}</button>${originalImages.has(b.asset)?'<button id="restore-background" class="wide">Restore original background</button>':''}<p class="muted">Apple Vision keeps people, not other objects. Processed locally on the Mac; removed areas print white. Check the preview for missed people or edges.</p><hr>`);
+      $('remove-background').onclick = () => removePeopleBackground(b);
+      if ($('restore-background')) $('restore-background').onclick = () => {
+        assets.set(b.asset, originalImages.get(b.asset));
+        originalImages.delete(b.asset);
+        renderInspector(); changed();
+      };
       panel.querySelectorAll('[data-edit]').forEach(input => input.oninput = () => {
         const key = input.dataset.edit;
         b.edits[key] = input.type === 'checkbox' ? input.checked : ['fit','assignment'].includes(key) ? input.value : Number(input.value);
@@ -110,12 +125,17 @@
         if (output) output.textContent = input.value;
         updateCropControls(); changed();
       });
-      $('reset-image').onclick = () => { b.edits = defaultEdits(b.type==='header'); renderInspector(); changed(); };
+      $('reset-image').onclick = () => { b.edits = {...defaultEdits(b.type==='header'), eraser_strokes:b.edits.eraser_strokes || []}; renderInspector(); changed(); };
       updateCropControls();
       return;
     }
     let content = `<p class="eyebrow">SECTION ${String(documentState.blocks.indexOf(b)+1).padStart(2,'0')}</p><h2>${names[b.type]}</h2>`;
-    if (b.type === 'header') content += field('Heading','title',b.title) + field('Subheading','subtitle',b.subtitle,{max:160,area:true}) + imageLayout(b);
+    if (b.type === 'header') {
+      content += field('Heading','title',b.title)
+        + select('Title font', 'title_font', b.title_font || 'custom',
+          [['custom','Custom bitmap font'], ['native','Built-in printer font']]).replace('data-edit=', 'data-field=')
+        + field('Subheading','subtitle',b.subtitle,{max:160,area:true}) + imageLayout(b);
+    }
     if (b.type === 'photo') content += field('Caption (optional)','caption',b.caption) + imageLayout(b);
     if (b.type === 'text') content += field('Your text','text',b.text,{area:true,max:600});
     if (b.type === 'signature') content += field('Signature label','label',b.label,{max:80}) + '<p class="muted">A blank signing area and rule are printed above this label.</p>';
@@ -124,6 +144,12 @@
       content += '<p class="muted">Line items, totals and receipt details.</p>' + field('Currency symbol','currency',b.currency,{max:4});
       content += b.items.map((item,i) => `<div class="item-row"><label>Item ${i+1}<input data-item="${i}" data-key="label" value="${escapeHTML(item.label)}" maxlength="64"></label><div class="row"><label>Qty<input data-item="${i}" data-key="quantity" type="number" min="1" max="999" value="${item.quantity}"></label><label>Unit price<input data-item="${i}" data-key="price" type="number" min="0" max="999999.99" step="0.01" value="${escapeHTML(item.price)}"></label></div><button class="remove" data-remove-item="${i}">Remove item</button></div>`).join('');
       content += `<button id="add-item" class="wide" ${b.items.length>=12?'disabled':''}>＋ Add item</button><div class="total"><span>TOTAL</span><strong id="total">${escapeHTML(b.currency)}${receiptTotal(b.items).toFixed(2)}</strong></div><hr>` + field('Date / time (optional)','date',b.date,{max:40}) + `<label class="check"><input id="automatic-date" type="checkbox" ${automaticDates.has(b.id)?'checked':''}>Use current date & time</label><p class="muted">Local time: DD/MM/YYYY HH:mm. Captured on each preview refresh; all copies use the previewed timestamp.</p>` + field('Reference (optional)','reference',b.reference,{max:64}) + field('Footer message (optional)','text',b.text,{area:true,max:400});
+    }
+    if (b.type !== 'spacer') {
+      const label = b.type === 'header' ? 'Native text size (subtitle & built-in title)' : 'Text size';
+      content += select(label, 'font_size', b.font_size || 'normal',
+        [['normal','Normal'], ['large','Large (double width & height)']]).replace('data-edit=', 'data-field=');
+      content += '<p class="muted">Uses the printer’s built-in font. Large text wraps sooner; preview lettering is approximate. ' + (b.type === 'header' ? 'Custom titles keep their original appearance.' : '') + '</p>';
     }
     content += '<hr><button id="delete-section" class="remove">Remove this section</button>';
     panel.innerHTML = content;
@@ -148,14 +174,39 @@
     if ($('add-item')) $('add-item').onclick = () => { b.items.push({label:'New item',quantity:1,price:'0.00'}); renderInspector(); changed(); };
     if ($('replace-asset')) $('replace-asset').onclick = () => { uploadTarget = b.id; $('asset-upload').click(); };
     if ($('edit-image')) $('edit-image').onclick = () => setMode('image');
-    if ($('remove-logo')) $('remove-logo').onclick = () => { assets.delete(b.asset); b.asset = null; renderInspector(); renderList(); changed(); };
+    if ($('remove-logo')) $('remove-logo').onclick = () => { assets.delete(b.asset); originalImages.delete(b.asset); b.asset = null; renderInspector(); renderList(); changed(); };
     $('delete-section').onclick = () => {
       documentState.blocks = documentState.blocks.filter(block => block.id !== b.id);
-      if (b.asset) assets.delete(b.asset);
+      if (b.asset) { assets.delete(b.asset); originalImages.delete(b.asset); }
       automaticDates.delete(b.id);
       selected = documentState.blocks[0]?.id;
       renderList(); renderInspector(); changed();
     };
+  }
+  async function removePeopleBackground(block) {
+    const id = block.asset, file = assets.get(id);
+    if (!file || backgroundJobs.has(id) || originalImages.has(id)) return;
+    backgroundJobs.add(id);
+    renderInspector(); updatePrint();
+    tell('Removing background locally with Apple Vision…');
+    const form = new FormData();
+    form.append('image', file, 'photo');
+    try {
+      const response = await fetch('/api/remove-background', {method:'POST', body:form});
+      if (!response.ok) await responseJSON(response);
+      const result = await response.blob();
+      // A replaced image or deleted section must never receive a late result.
+      if (block.asset !== id || assets.get(id) !== file || !documentState.blocks.includes(block)) return;
+      originalImages.set(id, file);
+      assets.set(id, result);
+      changed();
+      tell('Background removed. Check the people and edges in the preview; restore the original if needed.');
+    } catch (error) {
+      tell(`Background removal failed: ${error.message}. Original image unchanged.`);
+    } finally {
+      backgroundJobs.delete(id);
+      renderInspector(); updatePrint();
+    }
   }
   function updateTotal(b) { if ($('total')) $('total').textContent = `${b.currency}${receiptTotal(b.items).toFixed(2)}`; }
   function updateCropControls() {
@@ -227,7 +278,58 @@
       $('preview-state').classList.add('error');
     } finally { if (version === revision) updatePrint(); }
   }
+  function loadEditorSource() {
+    const file = assets.get(selectedBlock()?.asset);
+    if (!file) return;
+    if (eraseSource?.file !== file) {
+      const image = new Image(), url = URL.createObjectURL(file);
+      const source = eraseSource = {file, image, ready:false};
+      image.src = url;
+      image.decode().then(() => {
+        source.ready = true;
+        if (eraseSource === source && mode === 'image' && imageTool === 'erase') paintEraseCanvas();
+      }).catch(() => { source.failed = true; if (imageTool === 'erase') tell('Cannot open this image for erasing. Try a PNG or JPEG.'); })
+        .finally(() => URL.revokeObjectURL(url));
+    }
+  }
+  function paintEraseCanvas() {
+    const block = selectedBlock();
+    loadEditorSource();
+    const canvas = $('image-canvas');
+    canvas.style.cursor = 'crosshair';
+    canvas.style.opacity = '1';
+    $('image-help').textContent = 'Erase on the original image. White marks remove ink; the receipt context shows your crop and print result.';
+    if (!eraseSource?.ready) {
+      canvas.width = 1; canvas.height = 1;
+      $('image-help').textContent = eraseSource?.failed ? 'Cannot open this image for erasing. Try a PNG or JPEG.' : 'Loading original image…';
+      return;
+    }
+    const image = eraseSource.image;
+    const scale = Math.min(1, 2048 / Math.max(image.naturalWidth, image.naturalHeight));
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    context.fillStyle = 'white'; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    context.strokeStyle = context.fillStyle = 'white';
+    context.lineCap = context.lineJoin = 'round';
+    for (const stroke of block.edits.eraser_strokes || []) {
+      const radius = stroke.radius * Math.max(canvas.width, canvas.height);
+      context.lineWidth = radius * 2;
+      context.beginPath();
+      stroke.points.forEach(([x,y], i) => context[i?'lineTo':'moveTo'](x*canvas.width, y*canvas.height));
+      context.stroke();
+      const [x,y] = stroke.points[0];
+      context.beginPath(); context.arc(x*canvas.width, y*canvas.height, radius, 0, Math.PI*2); context.fill();
+    }
+  }
   function paintPreview() {
+    if (mode === 'image') loadEditorSource();
+    if (mode === 'image' && imageTool === 'erase') paintEraseCanvas();
+    else {
+      $('image-canvas').style.cursor = 'move';
+      $('image-help').textContent = 'Drag to position the crop. Zoom below 1 leaves white space inside the frame.';
+    }
     // Display dots with 1:2 pixel aspect for mode 1. Zoom only changes CSS sizes.
     // Neither this function nor the zoom handler requests or quantizes an image.
     const proof = snapshot;
@@ -243,6 +345,7 @@
       $('context-image').style.height = `${proof.height * 2 * 144 / proof.width}px`;
       $('context-selection').style.top = `${section.y * 2 * 144 / proof.width}px`;
       $('context-selection').style.height = `${section.height * 2 * 144 / proof.width}px`;
+      if (imageTool === 'erase') { $('image-name').textContent = 'ERASER / ORIGINAL IMAGE'; return; }
       const canvas = $('image-canvas');
       canvas.width = proof.width*2;
       canvas.height = section.height*4;
@@ -264,6 +367,8 @@
       validationError: [invalidFeed ? 'Enter a valid trailing feed: '+(finishing.cut?'8':'0')+'–20 lines.' : '',
         invalidCopies ? 'Choose a whole number of copies from 1 to 10.' : ''].filter(Boolean).join('\n'),
     });
+    if (eraseDrag) reasons.push('Finish the eraser stroke before printing.');
+    if (documentState.blocks.some(b => backgroundJobs.has(b.asset))) reasons.push('Waiting for background removal to finish.');
     if (snapshot && !outputLog.ready(snapshot, finishing)) reasons.push('Waiting for matching printer bytes. Refresh preview if output encoding fails.');
     return reasons;
   }
@@ -381,8 +486,7 @@
     if (file.size > 20*1024*1024) { tell(`${file.name} is larger than 20 MB.`); return false; }
     return true;
   }
-  $('photo-upload').onchange = () => {
-    const files = [...$('photo-upload').files];
+  function addPhotoFiles(files) {
     const available = Math.min(3-documentState.blocks.filter(b=>b.type==='photo').length,16-documentState.blocks.length);
     if (files.length > available) tell(`Up to three photos per receipt. Only the first ${available} files were added.`);
     let index = documentState.blocks.findIndex(b=>b.type==='footer');
@@ -392,39 +496,89 @@
       const block = newBlock('photo'); block.asset = uid(); assets.set(block.asset,file);
       documentState.blocks.splice(index++,0,block); selected = block.id;
     }
-    $('photo-upload').value = '';
     renderList(); renderInspector(); changed();
+  }
+  $('photo-upload').onchange = () => {
+    addPhotoFiles([...$('photo-upload').files]);
+    $('photo-upload').value = '';
   };
+  window.addEventListener('receipter-inbox-add', event => {
+    addPhotoFiles(event.detail);
+    setMode('layout');
+  });
+  window.receipterPhotoCapacity = () => Math.min(3-documentState.blocks.filter(b=>b.type==='photo').length, 16-documentState.blocks.length);
   $('asset-upload').onchange = () => {
     const file = $('asset-upload').files[0];
     const block = documentState.blocks.find(b=>b.id===uploadTarget);
     if (file && block && validUpload(file)) {
-      if (block.asset) assets.delete(block.asset);
+      if (block.asset) { assets.delete(block.asset); originalImages.delete(block.asset); }
       block.asset = uid(); assets.set(block.asset,file);
+      block.edits.eraser_strokes = [];
       renderList(); renderInspector(); changed();
     }
     $('asset-upload').value = '';
   };
   let cropDrag = null;
+  function erasePoint(event) {
+    const rect = $('image-canvas').getBoundingClientRect();
+    return [Math.max(0, Math.min(1, (event.clientX-rect.left)/rect.width)),
+      Math.max(0, Math.min(1, (event.clientY-rect.top)/rect.height))].map(v => Math.round(v*10000)/10000);
+  }
   $('image-canvas').onpointerdown = event => {
+    if (event.button !== 0) return;
     const block = selectedBlock();
+    if (imageTool === 'erase') {
+      if (!block?.edits || !eraseSource?.ready || eraseSource.file !== assets.get(block.asset)) return;
+      const strokes = block.edits.eraser_strokes ||= [];
+      if (strokes.length >= 100) { tell('Eraser limit: 100 strokes. Undo or reset erasing to continue.'); return; }
+      const stroke = {radius:brushSize/200, points:[erasePoint(event)]};
+      strokes.push(stroke);
+      eraseDrag = {block, stroke};
+      $('image-canvas').setPointerCapture(event.pointerId);
+      changed(); paintEraseCanvas();
+      return;
+    }
     if (!block?.edits || block.edits.fit !== 'cover') return;
     cropDrag = {x:event.clientX,y:event.clientY,cx:block.edits.crop_x,cy:block.edits.crop_y,id:block.id};
     $('image-canvas').setPointerCapture(event.pointerId);
   };
   $('image-canvas').onpointermove = event => {
+    if (eraseDrag) {
+      if (eraseDrag.block !== selectedBlock() || imageTool !== 'erase') return;
+      const points = eraseDrag.stroke.points, point = erasePoint(event), last = points[points.length-1];
+      if (Math.hypot(point[0]-last[0], point[1]-last[1]) < .001) return;
+      if (points.length >= 256) {
+        if (!eraseDrag.warned) tell('Finish this stroke and start another to keep erasing.');
+        eraseDrag.warned = true; return;
+      }
+      points.push(point);
+      changed(); paintEraseCanvas();
+      return;
+    }
     if (!cropDrag || selected !== cropDrag.id) return;
     const rect = $('image-canvas').getBoundingClientRect();
     const edits = selectedBlock().edits;
-    edits.crop_x = Math.round(Math.max(0,Math.min(1,cropDrag.cx-(event.clientX-cropDrag.x)/rect.width))*100)/100;
-    edits.crop_y = Math.round(Math.max(0,Math.min(1,cropDrag.cy-(event.clientY-cropDrag.y)/rect.height))*100)/100;
+    let directionX = -1, directionY = -1;
+    if (edits.crop_zoom < 1 && eraseSource?.ready && eraseSource.file === assets.get(selectedBlock().asset)) {
+      let w = eraseSource.image.naturalWidth, h = eraseSource.image.naturalHeight;
+      if (edits.rotation % 180) [w,h] = [h,w];
+      const height = selectedBlock().height;
+      const scale = Math.max(368/w, height/h) * edits.crop_zoom;
+      directionX = w*scale < 368 ? 1 : -1;
+      directionY = h*scale < height ? 1 : -1;
+    }
+    edits.crop_x = Math.round(Math.max(0,Math.min(1,cropDrag.cx+directionX*(event.clientX-cropDrag.x)/rect.width))*100)/100;
+    edits.crop_y = Math.round(Math.max(0,Math.min(1,cropDrag.cy+directionY*(event.clientY-cropDrag.y)/rect.height))*100)/100;
     for (const key of ['crop_x','crop_y']) {
       document.querySelector(`[data-edit="${key}"]`).value = edits[key];
       document.querySelector(`[data-output="${key}"]`).textContent = edits[key];
     }
     changed();
   };
-  $('image-canvas').onpointerup = $('image-canvas').onpointercancel = () => { cropDrag = null; };
+  $('image-canvas').onpointerup = $('image-canvas').onpointercancel = $('image-canvas').onlostpointercapture = () => {
+    cropDrag = null;
+    if (eraseDrag) { eraseDrag = null; renderInspector(); changed(); paintPreview(); }
+  };
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
   renderList(); renderMode(); renderInspector(); refreshPreview(); refreshStatus();
   setInterval(refreshStatus, 3000);

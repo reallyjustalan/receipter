@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from time import perf_counter, monotonic
 from collections import OrderedDict
 import base64
@@ -13,26 +14,45 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, Req
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from .escpos import PARTIAL_CUT, encode_column_image_parts, encode_tiny_image_test
+from .background import BackgroundUnavailable, remove_background
+from .escpos import PARTIAL_CUT, encode_receipt_parts, encode_tiny_image_test
 from .imaging import CANONICAL_SCALE, calibration_image, prepare_image, tiny_test_image
 from .receipt import Receipt, render_receipt
 from .printer import ASCII_DIAGNOSTIC, DEFAULT_CHUNK_SIZE, PrintStopped, interrupt, job_token, resume, send_raw, target_status
 
-app = FastAPI(title="Receipter · Photo booth")
+from .ingest import Inbox, router as inbox_router, storage_path
+
+
+@asynccontextmanager
+async def lifespan(app):
+    store = Inbox(storage_path())
+    app.state.inbox = store
+    store.start()
+    try:
+        yield
+    finally:
+        await run_in_threadpool(store.close)
+
+
+app = FastAPI(title="Receipter · Photo booth", lifespan=lifespan)
+app.include_router(inbox_router)
 MAX_UPLOAD = 20 * 1024 * 1024
 # Freeze assets with this backend. Editing files must not expose new controls
 # against an older running process (which previously ignored the cut fields).
 _ROOT = Path(__file__).parent
 BUILD_ID = hashlib.sha256(b"".join((_ROOT / name).read_bytes() for name in
-    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "printer.py"))).hexdigest()[:12]
+    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "background.py", "printer.py", "ingest.py", "inbox.js", "inbox.css"))).hexdigest()[:12]
 INDEX_HTML = (_ROOT / "index.html").read_text().replace("__BUILD_ID__", BUILD_ID)
 EDITOR_JS = (_ROOT / "editor.js").read_text()
 STUDIO_JS = (_ROOT / 'studio.js').read_text()
 OUTPUT_LOG_JS = (_ROOT / 'output-log.js').read_text()
 STUDIO_CSS = (_ROOT / 'studio.css').read_text()
+INBOX_JS = (_ROOT / 'inbox.js').read_text()
+INBOX_CSS = (_ROOT / 'inbox.css').read_text()
 # Process-local, bounded, expiring canonical snapshots. Printing never re-renders.
 _snapshots = OrderedDict()
 _render_slots = asyncio.Semaphore(2)
+_background_slots = asyncio.Semaphore(1)
 SNAPSHOT_TTL = 1800
 _log = logging.getLogger("uvicorn.error")
 
@@ -70,9 +90,36 @@ def studio_styles() -> Response:
     return Response(STUDIO_CSS, media_type='text/css', headers={'Cache-Control': 'no-store'})
 
 
+@app.get('/inbox.js')
+def inbox_script() -> Response:
+    return Response(INBOX_JS, media_type='text/javascript', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/inbox.css')
+def inbox_styles() -> Response:
+    return Response(INBOX_CSS, media_type='text/css', headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/api/remove-background')
+async def remove_image_background(image: UploadFile = File(...)) -> Response:
+    raw = await image.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD:
+        raise HTTPException(413, 'Limit: 20 MB per image')
+    try:
+        async with _background_slots:
+            result = await run_in_threadpool(remove_background, raw)
+        if len(result) > MAX_UPLOAD:
+            raise HTTPException(413, 'Processed PNG exceeds 20 MB. Use a smaller photo.')
+    except BackgroundUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return Response(result, media_type='image/png', headers={'Cache-Control': 'no-store'})
+
+
 @app.post('/api/receipt-preview')
 async def receipt_preview(document: str = Form(...), assets: list[UploadFile] = File(default=[])) -> dict:
-    if len(document) > 32_000 or len(assets) > 16:
+    if len(document) > 2_000_000 or len(assets) > 16:
         raise HTTPException(413, 'Receipt document or asset count is too large')
     try:
         receipt = Receipt.model_validate_json(document)
@@ -307,8 +354,8 @@ def _encode_prepared(prepared, density_mode, line_spacing, header=b'', *,
         raise ValueError('Choose 1–10 copies')
     if cut and feed_lines < 8:
         raise ValueError('Use at least 8 trailing lines when cutting to clear the print head')
-    parts = encode_column_image_parts(prepared.colors, density_mode=density_mode,
-                                     line_spacing=line_spacing, trailing_lines=feed_lines)
+    parts = encode_receipt_parts(prepared, density_mode=density_mode,
+                                 line_spacing=line_spacing, trailing_lines=feed_lines)
     if header:
         parts.insert(0, header)
     if cut:

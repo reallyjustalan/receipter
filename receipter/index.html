@@ -6,12 +6,13 @@
   <meta name="receipter-build" content="__BUILD_ID__">
   <title>Receipter</title>
   <link rel="stylesheet" href="/studio.css">
+  <link rel="stylesheet" href="/inbox.css">
 </head>
 <body>
   <div id="top-bar">
   <header class="app-header">
     <a class="brand" href="/" aria-label="Receipter home">receipter</a>
-    <div class="printer-tools"><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
+    <div class="printer-tools"><button id="open-inbox">Photo inbox</button><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
   </header>
   <nav class="workspace-nav" aria-label="Editing workspace">
     <div class="modes"><button data-mode="layout" aria-pressed="true">01 <span>Receipt layout</span></button><button data-mode="image" aria-pressed="false" disabled>02 <span>Image editor</span></button><button data-mode="final" aria-pressed="false">03 <span>Printer preview</span></button></div>
@@ -28,8 +29,8 @@
     <section class="stage" aria-label="Live receipt preview">
       <div class="stage-heading"><span id="stage-title">LIVE RECEIPT</span><span id="dot-count">400 DOTS WIDE</span></div>
       <p id="preview-state" role="status" aria-live="polite">Assembling your receipt…</p>
-      <div id="receipt-stage"><div id="paper"><img id="receipt-image" alt="Complete receipt, exactly as assembled for the printer"><div id="section-overlays"></div></div><p class="paper-note">76 mm paper · black &amp; red</p></div>
-      <div id="image-stage" hidden><div class="image-editor-heading"><button id="back-layout">← Back to receipt</button><span id="image-name"></span></div><div class="image-workbench"><div><canvas id="image-canvas" aria-label="Processed image section. Drag to reposition the crop; position sliders are also available."></canvas><p class="paper-note">Drag to position the crop. Every edit updates the receipt too.</p></div><div class="receipt-context"><p class="eyebrow">IN YOUR RECEIPT</p><div id="context-paper"><img id="context-image" alt="Live full receipt while editing this image"><div id="context-selection"></div></div></div></div></div>
+      <div id="receipt-stage"><div id="paper"><img id="receipt-image" alt="Complete receipt preview; native text appearance is approximate"><div id="section-overlays"></div></div><p class="paper-note">76 mm paper · black &amp; red · native text preview approximate</p></div>
+      <div id="image-stage" hidden><div class="image-editor-heading"><button id="back-layout">← Back to receipt</button><span id="image-name"></span></div><div class="image-workbench"><div><canvas id="image-canvas" aria-label="Image editor. Drag to reposition in Move / crop mode, or paint out marks in Erase mode."></canvas><p class="paper-note" id="image-help">Drag to position the crop. Every edit updates the receipt too.</p></div><div class="receipt-context"><p class="eyebrow">IN YOUR RECEIPT</p><div id="context-paper"><img id="context-image" alt="Live full receipt while editing this image"><div id="context-selection"></div></div></div></div></div>
     </section>
     <aside class="inspector"><div id="inspector-content"></div></aside>
   </main>
@@ -45,6 +46,22 @@
   <input id="asset-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.svg" hidden>
   <script src="/editor.js"></script>
   <script src="/output-log.js"></script>
+  <dialog id="photo-inbox" aria-labelledby="inbox-title">
+    <div class="inbox-heading"><h2 id="inbox-title">Photo inbox</h2><button id="close-inbox">Close</button></div>
+    <p>Set NX Tether’s destination to this folder. New JPEGs appear automatically; nothing prints automatically.</p>
+    <form id="inbox-settings">
+      <label>Folder path on this computer<input id="inbox-folder" type="text" placeholder="/Users/you/Pictures/Camera Inbox"></label>
+      <label><input id="inbox-enabled" type="checkbox"> Watch for new JPEGs</label>
+      <button type="submit">Save settings</button>
+      <button id="inbox-import" type="button">Import existing JPEGs</button>
+    </form>
+    <p id="inbox-status" role="status" aria-live="polite"></p>
+    <button id="inbox-add" class="primary">Add selected to receipt</button>
+    <p>Up to three photos per receipt. Choose copies in Printer preview. Imported JPEGs are saved; receipt drafts still stay in this tab.</p>
+    <div id="inbox-photos"></div>
+    <button id="inbox-more" hidden>Load more</button>
+  </dialog>
   <script src="/studio.js"></script>
+  <script src="/inbox.js"></script>
 </body>
 </html>

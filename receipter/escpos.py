@@ -10,6 +10,71 @@ LF = b"\n"
 PARTIAL_CUT = b"\x1dV\x01"  # GS V 1: A/B partial-cut autocutter
 
 
+def encode_native_text(lines: list[str], *, font_size='normal', center=False,
+                       padding=True) -> bytes:
+    """Use python-escpos code-page handling and the printer's resident font.
+
+    Callers pass validated, wrapped lines, never raw user control characters.
+    Feed matches the approximate preview's 13-row line pitch and 4-row padding.
+    """
+    from escpos.printer import Dummy
+    from .profile import printer_profile
+
+    if font_size not in ('normal', 'large'):
+        raise ValueError('Unsupported native font size')
+    large = font_size == 'large'
+    printer = Dummy(profile=printer_profile())
+    printer.set(align='center' if center else 'left', font='a',
+                double_width=large, double_height=large, bold=False, underline=0)
+    printer._raw(ESC + b'r\x00')
+    if padding:
+        printer._raw(ESC + b'J\x08')
+    printer._raw(ESC + b'3' + bytes((52 if large else 26,)))
+    for line in lines:
+        if any(ord(char) < 32 or ord(char) == 127 for char in line):
+            raise ValueError('Control characters are not allowed in receipt text')
+        printer.text(line + '\n')
+    if padding:
+        printer._raw(ESC + b'J\x08')
+    # Do not leak alignment or double-size mode into subsequent artwork/feed.
+    printer.set(align='left', font='a', normal_textsize=True)
+    printer._raw(ESC + b'2')
+    return printer.output
+
+
+def encode_receipt_parts(prepared, *, density_mode=1, line_spacing=16,
+                         trailing_lines=4) -> list[bytes]:
+    """Interleave snapshot-native text with raster sections, without duplicate glyphs."""
+    if not prepared.native_text:
+        return encode_column_image_parts(prepared.colors, density_mode=density_mode,
+                                         line_spacing=line_spacing, trailing_lines=trailing_lines)
+    if density_mode != 1 or line_spacing != 16:
+        raise ValueError('Mixed receipts require canonical density and spacing')
+    # Validate settings even if the receipt contains only native text.
+    encode_column_image_parts(prepared.colors, trailing_lines=trailing_lines)
+    parts = [ESC + b'=\x01' + ESC + b'@']
+
+    def raster(start, end):
+        if end <= start:
+            return
+        bands = encode_column_image_parts(prepared.colors.crop((0, start, prepared.width, end)),
+                                          trailing_lines=0)[1:-1]
+        # A section boundary need not coincide with an eight-pin band boundary.
+        remainder = (end - start) % 8
+        if remainder:
+            bands[-1] = bands[-1][:-1] + bytes((remainder * 2,))
+        parts.extend(bands)
+
+    cursor = 0
+    for start, end, commands in prepared.native_text:
+        raster(cursor, start)
+        parts.append(commands)
+        cursor = end
+    raster(cursor, prepared.height)
+    parts.append(ESC + b'r\x00' + ESC + b'2' + LF * trailing_lines)
+    return parts
+
+
 def encode_tiny_image_test() -> bytes:
     """Only two single-density 8-pin ESC * bands; no reset, color or cut."""
     colors = tiny_test_image().colors

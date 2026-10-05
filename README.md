@@ -12,7 +12,7 @@ Open <http://localhost:8022>. Run **one server process**, without multiple worke
 ## Documentation — Diátaxis
 
 - **Tutorial:** [Make your first photo receipt](docs/tutorials/first-receipt.md)
-- **How-to guides:** [Edit a receipt](docs/how-to/edit-receipts.md) · [Run, test and troubleshoot](docs/how-to/operate.md)
+- **How-to guides:** [Automatically ingest JPEGs](docs/how-to/photo-inbox.md) · [Edit a receipt](docs/how-to/edit-receipts.md) · [Run, test and troubleshoot](docs/how-to/operate.md)
 - **Reference:** [Receipt model and API](docs/reference/receipt-api.md) · [Printer and diagnostic endpoints](docs/reference/printer.md)
 - **Explanation:** [Canonical rendering and preview architecture](docs/explanation/rendering.md) · [Receipt typography and font fidelity](docs/explanation/receipt-typography.md)
 
@@ -30,6 +30,7 @@ node tests/test_editor.js
 node tests/test_output_log.js
 uv run playwright install chromium
 uv run python tests/browser_smoke.py
+uv run python tests/browser_inbox.py
 ```
 
 Tests do not print. The browser test starts its own isolated server and mocks printer status and print delivery.

@@ -19,7 +19,7 @@ Use **Fit entire image** for an uncropped logo, or **Crop to fill** for a croppe
 Select a photo, then open **Image editor** or **Crop & process image**.
 
 - Set **Frame height** in layout mode to change its height on paper.
-- Choose **Crop to fill**. **Crop zoom** magnifies within the fixed frame. Drag the preview or use horizontal/vertical position sliders to choose the visible region. If an axis has no excess image area, that position control has no visible effect until zoom or frame dimensions change.
+- Choose **Crop to fill**. **Image zoom** ranges from **0.25× to 4×**. Values below 1 shrink the photo relative to its fill size, leaving white space where it no longer fills the frame. Values above 1 magnify it. Drag the preview in **Move / crop** mode or use horizontal/vertical position sliders to position it. This changes the printed photo; the toolbar's **View** zoom only changes screen magnification. If an axis exactly fits, its position control has no visible effect until zoom or frame dimensions change.
 - Choose **Fit entire image** to retain the entire image with white surround. Crop controls are disabled in this mode.
 - Rotate clockwise or mirror/flip. Positions are evaluated after orientation changes.
 - Adjust brightness and contrast. Increase **Threshold / ink bias** to add ink; 128 is neutral.
@@ -28,6 +28,24 @@ Select a photo, then open **Image editor** or **Crop & process image**.
 - Lower black/red ink remaining to remove dots from that channel, not recolor them.
 
 All adjustments are per image, including logos. The enlarged preview and full-receipt context update after a short debounce. A faded image means edits are still being rendered; printing is blocked until the latest result is ready.
+
+### Erase smudges or unwanted details
+
+In **Crop & process image**, find **Clean up image** and switch **Tool** to **Erase**. The large canvas shows the original, uncropped image (with any background removal applied). Choose a brush diameter and click or drag over marks to remove them. PNG and JPEG are recommended; erasing requires a browser-decodable image.
+
+White brush marks become paper-white areas in the receipt, before dithering, even with dark brightness/threshold settings. The full-receipt context shows the processed result. Switch back to **Move / crop** to inspect the enlarged printer-dot preview or reposition the image.
+
+Use **Undo last erase** to remove the latest stroke, or **Reset erasing** to remove all strokes on this image. Crop, rotation, flips, zoom and tone adjustments retain the erasing, attached to the source image. **Reset image adjustments** also retains erasing. Replacing the uploaded image clears its strokes; the original upload is never overwritten. There is a limit of 100 strokes per image and 256 sampled points per stroke; start another stroke if prompted. Erasing, like the rest of the draft, is kept only in the current tab.
+
+### Remove the background and keep people
+
+In **Crop & process image**, click **Remove background** under **Keep people only**. Apple Vision processes the photo locally on the Mac running Receipter—no cloud service, API key or image upload to a third party. Run `uv sync` and restart the server after updating; this feature requires macOS 12 or later. Other platforms can still use the rest of Receipter.
+
+The mask keeps detected people rather than arbitrary foreground objects. Check hair, clothing, small people and crowded group shots in the preview: segmentation is not perfect. If no people are detected, the original stays unchanged and an explanation appears in the event log.
+
+**Restore original background** reverses removal without resetting crop or tone settings. **Reset image adjustments** only resets those adjustments, not the background. Replacing the image discards its saved original. Background removal preserves the image dimensions and existing transparency; transparent areas are composited onto white before the usual tone/ink processing. Processing runs before cropping and dithering. Printing is blocked while removal is pending.
+
+Originals and processed images live only in the current browser tab. Input and output are limited to 20 MB each, with the usual 24-megapixel image limit. Inference uses a copy bounded to 2048 pixels on its longest side; the mask is resized to the original dimensions.
 
 ## Create an itemised footer
 

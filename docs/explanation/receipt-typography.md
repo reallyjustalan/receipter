@@ -10,7 +10,7 @@ The built-in letters live in the printer's firmware. The installed python-escpos
 
 The previous renderer used Pillow's proportional default font at 18 layout pixels, then scaled it vertically by 0.5 and thresholded it. Thin antialiased strokes could disappear during that conversion. Rendering a larger browser preview could not recover the lost dots.
 
-Receipt text now uses bundled fixed-cell bitmap glyphs, pasted **directly into the canonical indexed dot map**. There is no text antialiasing, image resizing, dithering or second threshold pass. Rules occupy one canonical row. Every digit has the same advance, so amounts align without proportional-font spacing.
+Titles and preview text use bundled fixed-cell bitmap glyphs pasted into the canonical indexed dot map. Other printed text now uses the printer's resident font through python-escpos, including footer totals and details. Normal and Large sizes use native normal and double-width/double-height modes; preview glyphs scale with nearest-neighbor sampling. Rules remain one-row raster artwork. Amounts use fixed-column spacing rather than proportional-font spacing.
 
 The default view is 100% rather than 85%, avoiding initial fractional downscaling. At 100%, a canonical dot occupies one CSS pixel horizontally and two vertically, following the existing graphics-mode preview aspect. Smaller view zooms necessarily discard some screen detail, but never change the receipt's actual dots.
 
@@ -18,7 +18,7 @@ The default view is 100% rather than 85%, avoiding initial fractional downscalin
 
 The bundled glyphs are public-domain **font8x8** basic Latin and Latin-1 bitmaps, placed in a 9×9 cell with a 12-column advance and 13-row line pitch. This gives 33 cells across a 400-dot canvas, or 30 within the receipt's margins. The eight-row glyph shapes and chosen spacing are an explicit approximation to fixed-cell impact lettering; they are **not a verified copy of Epson's nine-row glyphs**. [Attribution and source revision](../../receipter/fonts/NOTICE.md) are bundled with the data.
 
-The preview shows exactly these rasterized letters, and printing sends the same dots. It does **not** secretly switch to the printer's firmware text commands, which could have different glyphs, width, code-page behavior and feed positions. Mixing native text into a receipt would require a separately validated compositor and an honest distinction between an approximate text proof and an exact graphics proof.
+The preview shows these approximate rasterized letters. Printing sends title and artwork dots unchanged, but replaces all other text rows with saved firmware-text commands. The snapshot stores both representations; inspection and printing use the same mixed-output encoder. Native glyph shape, width and alignment can differ from the screen. The UI labels this approximation explicitly; physical validation is still needed.
 
 A close, straight-on scan of the printer's default text or an official usable glyph resource would allow a more faithful comparison. No physical output comparison has yet verified this approximation.
 

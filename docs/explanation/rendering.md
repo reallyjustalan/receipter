@@ -1,4 +1,6 @@
-# Explanation: one receipt, one canonical dot map
+# Explanation: receipt previews and mixed printer output
+
+Text elements, footer items/totals/details, captions, subtitles and signature labels print using `python-escpos.text()` and the printer's resident Font A, not bitmap glyphs. Their wrapped lines and encoded commands are saved with the preview snapshot and interleaved with raster sections in document order. Titles default to the custom bitmap font; the header's Title font selector can switch them to the built-in printer font. Custom titles, rules and artwork retain the raster path. Each text-bearing section offers Normal or Large (native double width and height); the header size setting affects its subtitle and any built-in title, leaving custom titles unchanged. Preview glyphs and line pitch scale with the selection and wrapping is recalculated before saving. The screen uses approximate bitmap glyphs; native font shape, width and alignment may differ. Native text uses black ink and explicit line spacing, with alignment and size reset after each run; hardware validation is still required.
 
 ## Three workspaces, one document
 
@@ -24,7 +26,7 @@ Each image is quantized independently, then pasted into a shared indexed receipt
 
 ## Why printing uses a snapshot
 
-The preview endpoint validates the whole document, renders once and stores the canonical `PreparedImage` under an opaque token. The browser displays that exact map. The print endpoint retrieves the snapshot and encodes it directly; it does not accept a second copy of the layout or source images.
+The preview endpoint validates the whole document, renders once and stores the canonical `PreparedImage` under an opaque token. The browser displays that map as a preview. The print endpoint retrieves the snapshot and encodes it directly, replacing native-text rows with their saved commands; it does not accept a second copy of the layout or source images.
 
 Snapshots are process-local, bounded to sixteen entries and expire after thirty minutes. Each token is consumed on one print attempt (a batch of 1–10 copies), including uncertain delivery failures. The canonical image is encoded once and its complete setup/image/feed/cut parts are repeated under one transport lock. Copy count never triggers rendering, and finishing is applied per copy. This is one bounded job, not a queue of future jobs. STOP and errors discard all remaining unsent copies. An explicit preview refresh is required before another batch. This prevents accidental reuse and avoids automatic retries after ambiguous USB delivery. STOP retains the transport’s cancellation generation checks.
 

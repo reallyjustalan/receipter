@@ -62,6 +62,8 @@ _BAYER_8 = (
 class PreparedImage:
     colors: Image.Image
     preview_png: bytes
+    # (start row, end row, native commands); preview glyphs are not printed here.
+    native_text: tuple[tuple[int, int, bytes], ...] = ()
 
     @property
     def width(self) -> int:
@@ -100,6 +102,7 @@ def prepare_image(
     crop_y: float = 0.5,
     frame_height: int | None = None,
     fit: str = 'cover',
+    eraser_strokes: list[dict] | None = None,
 ) -> PreparedImage:
     if rotation not in (0, 90, 180, 270):
         raise ValueError("Rotation must be 0, 90, 180 or 270 degrees clockwise")
@@ -116,7 +119,7 @@ def prepare_image(
 
     if not 1 <= threshold <= 255 or assignment not in ('auto', 'black', 'red', 'swap'):
         raise ValueError('Invalid threshold or ink assignment')
-    if not 1 <= crop_zoom <= 4 or not 0 <= crop_x <= 1 or not 0 <= crop_y <= 1:
+    if not .25 <= crop_zoom <= 4 or not 0 <= crop_x <= 1 or not 0 <= crop_y <= 1:
         raise ValueError('Invalid crop position or zoom')
     if fit not in ('cover', 'contain') or (frame_height is not None and not 32 <= frame_height <= 800):
         raise ValueError('Invalid image frame')
@@ -125,31 +128,57 @@ def prepare_image(
     background = Image.new("RGBA", source.size, "white")
     background.alpha_composite(source)
     source = background.convert("RGB")
-    if rotation:
-        source = source.rotate(-rotation, expand=True)
-    if flip_horizontal:
-        source = ImageOps.mirror(source)
-    if flip_vertical:
-        source = ImageOps.flip(source)
-    if frame_height is not None:
+    coverage = Image.new('L', source.size, 255)
+    if eraser_strokes:
+        draw = ImageDraw.Draw(coverage)
+        for stroke in eraser_strokes:
+            radius = stroke['radius'] * max(source.size)
+            points = [(x * source.width, y * source.height) for x, y in stroke['points']]
+            if len(points) > 1:
+                draw.line(points, fill=0, width=max(1, round(radius * 2)))
+            for x, y in points:
+                draw.ellipse((x-radius, y-radius, x+radius, y+radius), fill=0)
+
+    def frame(image, fill):
+        if rotation:
+            image = image.rotate(-rotation, expand=True)
+        if flip_horizontal:
+            image = ImageOps.mirror(image)
+        if flip_vertical:
+            image = ImageOps.flip(image)
+        if frame_height is None:
+            return image
         target = (width, frame_height)
-        if fit == 'contain':
-            fitted = ImageOps.contain(source, target, Image.Resampling.LANCZOS)
-            source = Image.new('RGB', target, 'white')
-            source.paste(fitted, ((width - fitted.width) // 2, (frame_height - fitted.height) // 2))
-        else:
-            ratio = width / frame_height
-            cw = min(source.width, source.height * ratio) / crop_zoom
-            ch = cw / ratio
-            left = (source.width - cw) * crop_x
-            top = (source.height - ch) * crop_y
-            source = source.resize(target, Image.Resampling.LANCZOS,
-                                   box=(left, top, left + cw, top + ch))
+        if fit == 'contain' or crop_zoom < 1:
+            if fit == 'contain':
+                fitted = ImageOps.contain(image, target, Image.Resampling.LANCZOS)
+                x, y = .5, .5
+            else:
+                scale = max(width / image.width, frame_height / image.height) * crop_zoom
+                fitted = image.resize((max(1, round(image.width * scale)),
+                                       max(1, round(image.height * scale))), Image.Resampling.LANCZOS)
+                x, y = crop_x, crop_y
+            result = Image.new(image.mode, target, fill)
+            result.paste(fitted, (round((width - fitted.width) * x),
+                                  round((frame_height - fitted.height) * y)))
+            return result
+        ratio = width / frame_height
+        cw = min(image.width, image.height * ratio) / crop_zoom
+        ch = cw / ratio
+        left = (image.width - cw) * crop_x
+        top = (image.height - ch) * crop_y
+        return image.resize(target, Image.Resampling.LANCZOS,
+                            box=(left, top, left + cw, top + ch))
+
+    source = frame(source, 'white')
+    coverage = frame(coverage, 0)
     source = ImageEnhance.Brightness(source).enhance(brightness)
     source = ImageEnhance.Contrast(source).enhance(contrast)
 
     if threshold != 128:
         source = source.point([max(0, min(255, i + 128 - threshold)) for i in range(256)] * 3)
+    # Erased pixels and zoom-out padding stay paper-white even with dark tones.
+    source = Image.composite(source, Image.new('RGB', source.size, 'white'), coverage)
     if assignment in ('black', 'red'):
         two_color = False
 

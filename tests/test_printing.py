@@ -365,7 +365,7 @@ class EndpointTests(unittest.IsolatedAsyncioTestCase):
         prepared = tiny_test_image()
         single = encode_column_image_parts(prepared.colors, density_mode=0, trailing_lines=2)
         with (patch.object(app,'_send',new_callable=AsyncMock,return_value={}) as send,
-              patch.object(app,'encode_column_image_parts',wraps=encode_column_image_parts) as encode):
+              patch.object(app,'encode_receipt_parts',wraps=app.encode_receipt_parts) as encode):
             result = await app._print_prepared(prepared,0,16,printer.job_token(),cut=False,feed_lines=2,copies=10)
             self.assertEqual(send.call_args.args[0],single*10)
             self.assertEqual(result['copies'],10)

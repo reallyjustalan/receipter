@@ -8,18 +8,20 @@ OpenAPI is served at `/docs`. This reference describes the creator workflow. [Pr
 
 | Type | Fields beyond `id` and `type` |
 | --- | --- |
-| `header` | `title` (≤100 chars), `subtitle` (≤160), optional `asset`, `height` (32–800, default 100), `edits` (default contain) |
+| `header` | `title` (≤100 chars), `title_font` (`custom` default / `native`), `subtitle` (≤160), optional `asset`, `height` (32–800, default 100), `edits` (default contain) |
 | `photo` | required `asset`, `height` (32–800, default 240), `edits` (default cover), `caption` (≤100) |
 | `footer` | `items` (0–12), `currency` (≤4, default `$`), `date` (≤40), `reference` (≤64), `text` (≤400) |
 | `text` | `text` (≤600) |
 | `signature` | `label` (≤80); renderer adds a blank signing area and rule |
 | `spacer` | `height` (8–200, default 24) |
 
+All blocks except `spacer` accept `font_size`: `normal` (default) or `large` (double width and height). For headers this affects the subtitle and, when `title_font` is `native`, the title. Custom bitmap titles retain their original appearance. Photo size affects only the caption. Large text wraps sooner and counts toward the receipt height limit.
+
 Heights are layout pixels, not printer rows. Layout width is 400 with 16-pixel horizontal margins. Canonical vertical scale is 0.5. The assembled output must fit 1024 rows; otherwise rendering fails rather than clipping. Receipt previews approximate physical pixel aspect in CSS; see [rendering](../explanation/rendering.md).
 
-Text uses a bundled fixed-cell bitmap approximation of impact lettering, not the printer's ROM font. Glyphs occupy a 9×9 cell with 12-dot advance and 13-row line pitch, drawn directly into canonical dots. Printable ASCII, Latin-1 and euro are supported; common smart punctuation is normalized, and unsupported characters return 400. See [typography reference and rationale](../explanation/receipt-typography.md).
+Titles default to bundled bitmap lettering; set `title_font: "native"` to use the built-in printer font instead. All other text prints through python-escpos using the printer's resident Font A, with native double-size mode for `large`. The preview uses approximate bitmap glyphs with 12-dot advance and 13-row line pitch (both doubled for large text); physical glyph width and alignment may differ. Printable ASCII, Latin-1 and euro are supported; common smart punctuation is normalized, and unsupported characters return 400. See [typography reference and rationale](../explanation/receipt-typography.md).
 
-An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. No taxes or server-side date generation are implied. The UI's per-footer automatic-date option resolves the browser's local clock to a `DD/MM/YYYY HH:mm` string before sending the preview document. The `date` API field remains a plain string; there is no `automatic_date` document field. Printing never recalculates it.
+An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. Printed item labels use the ASCII separator `x` (e.g. `2 x Photo strip`) to avoid device-dependent multiplication-symbol code pages. No taxes or server-side date generation are implied. The UI's per-footer automatic-date option resolves the browser's local clock to a `DD/MM/YYYY HH:mm` string before sending the preview document. The `date` API field remains a plain string; there is no `automatic_date` document field. Printing never recalculates it.
 
 ### Image edits
 
@@ -32,15 +34,18 @@ An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1�
 | `dither` | boolean; true = Floyd–Steinberg, false = no dithering |
 | `assignment` | `auto`, `black`, `red`, `swap`; `auto` |
 | `black_ink`, `red_ink` | 0–100 percent retained; 100 |
-| `crop_zoom` | 1–4; 1 |
+| `crop_zoom` | 0.25–4; 1. Below 1 shrinks relative to cover size, with white padding. |
 | `crop_x`, `crop_y` | 0–1; 0.5. Fraction of available crop travel in oriented source coordinates. |
 | `fit` | `cover` or `contain`; cover for photos, contain for headers |
+| `eraser_strokes` | Up to 100 strokes; default `[]`. Each has `radius` (0.001–0.25 of the source's longest side) and `points` (1–256 `[x,y]` pairs, each coordinate 0–1). |
+
+Eraser points refer to the EXIF-oriented source before rotation, flips or cropping. The eraser mask follows those transforms and makes erased regions white after tone/threshold adjustments and before dithering. Zoom-out padding also stays white under tone adjustments. Erasing is non-destructive; strokes are stored separately from uploaded bytes. With zoom below 1, position controls align the image within any spare frame space (0 = left/top, 1 = right/bottom); on overflowing axes they select the crop.
 
 Contain ignores crop zoom and position. Forced black/red first uses monochrome quantization; swap exchanges separated black/red channels. Retention thinning is applied after assignment. All settings are independent per block.
 
 ### Upload limits
 
-Raster formats readable by Pillow (including PNG, JPEG, WebP, GIF first frame, BMP) and self-contained SVG are accepted. EXIF orientation is honored. Limits: 20 MiB per upload, 60 MiB combined, 16 uploaded assets, 24 megapixels per decoded raster, 2 MiB per SVG, 32,000 characters in the document JSON. SVGs rasterize to a bounded 1200-pixel box with preserved aspect ratio.
+Raster formats readable by Pillow (including PNG, JPEG, WebP, GIF first frame, BMP) and self-contained SVG are accepted. EXIF orientation is honored. Limits: 20 MiB per upload, 60 MiB combined, 16 uploaded assets, 24 megapixels per decoded raster, 2 MiB per SVG, 2,000,000 characters in the document JSON (including eraser strokes). SVGs rasterize to a bounded 1200-pixel box with preserved aspect ratio.
 
 SVG external references, image elements (including embedded raster data), stylesheets, scripts, foreign objects and entity declarations are rejected. Local `#id` references and inline vector attributes are allowed. Outline text; system font discovery is disabled.
 
@@ -65,7 +70,7 @@ Response JSON:
 }
 ```
 
-`y` and `height` are canonical row coordinates. PNG width/height are 2× the dot dimensions with nearest-neighbor pixels. The PNG is the same palette map used by printing, not a separate aesthetic mockup. Block metadata supports selection overlays and image-editor extraction.
+`y` and `height` are canonical row coordinates. PNG width/height are 2× the dot dimensions with nearest-neighbor pixels. The PNG contains the raster artwork plus approximate native-text glyphs. Printing replaces those text rows with the snapshot's saved native commands. Block metadata supports selection overlays and image-editor extraction.
 
 Rendering never prints. Snapshots expire after 1800 seconds or eviction from the 16-entry process-local cache. Restarting clears them.
 

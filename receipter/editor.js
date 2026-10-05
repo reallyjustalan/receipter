@@ -32,7 +32,7 @@
     return {rotation: 0, flip_horizontal: false, flip_vertical: false,
       brightness: 1, contrast: 1, threshold: 128, dither: true, assignment: 'auto',
       black_ink: 100, red_ink: 100, crop_zoom: 1, crop_x: .5, crop_y: .5,
-      fit: logo ? 'contain' : 'cover'};
+      fit: logo ? 'contain' : 'cover', eraser_strokes: []};
   }
   function formatReceiptDate(date = new Date()) {
     const pad = value => String(value).padStart(2, '0');
