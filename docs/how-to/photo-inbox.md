@@ -15,9 +15,9 @@ Files already present when a new folder is selected are not imported automatical
 
 - Only immediate `.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.jif` and `.jfi` files are scanned, case-insensitively (including `.JPG`, `.JPEG` and mixed case). Contents must decode as JPEG regardless of the extension. No subfolders, symlinks, RAW files or other formats.
 - Maximum 20 MB per JPEG. The importer waits for unchanged size/mtime across two scans and decodes the JPEG before accepting it. Invalid or incomplete images are retried; an error appears in the inbox.
-- Originals are copied without modification. Thumbnails apply EXIF orientation. The app never deletes files from the source folder or camera.
+- Originals are copied without modification. Pillow creates a compressed JPEG working copy (quality 90, up to 4096 pixels on the longest side) for the editor, plus a 320-pixel thumbnail. Both apply EXIF orientation. High megapixel counts no longer cause an app-level rejection; Pillow’s decompression-bomb protection remains enabled. Existing saved photos get working copies on first use. The app never deletes files from the source folder or camera.
 - Identical content is imported only once, even with a different filename. Changed content can be imported as a new photo.
-- The SQLite catalogue, folder settings, originals and thumbnails live in `~/.receipter/inbox`. Set `RECEIPTER_DATA_DIR` before starting the server to use a different parent directory.
+- The SQLite catalogue, folder settings, originals, working copies and thumbnails live in `~/.receipter/inbox`. Set `RECEIPTER_DATA_DIR` before starting the server to use a different parent directory.
 - Storage is persistent, with no automatic cleanup. Back up the entire storage directory together. Receipt drafts are still browser-tab-only; the catalogue does not save editable receipts or track print history yet.
 - The inbox displays the latest 100 photos; **Load more** reveals older photos.
 - Folder scanning runs every two seconds while enabled, independently of whether the inbox is open. A periodic rescan also catches files received while the server was stopped.

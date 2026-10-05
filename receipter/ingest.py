@@ -14,8 +14,10 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from PIL import Image, ImageOps
+from PIL import Image
 from pydantic import BaseModel
+
+from .imaging import load_source
 
 MAX_IMAGE = 20 * 1024 * 1024
 JPEG_EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.jfif', '.jif', '.jfi'}
@@ -131,20 +133,23 @@ class Inbox:
                         with Image.open(io.BytesIO(raw)) as image:
                             if image.format != 'JPEG':
                                 raise ValueError('Not a JPEG')
-                            image.load()
-                            thumb = ImageOps.exif_transpose(image).convert('RGB')
-                            thumb.thumbnail((320, 320))
+                        working = load_source(raw).convert('RGB')
+                        thumb = working.copy()
+                        thumb.thumbnail((320, 320), Image.Resampling.LANCZOS)
                         photo_id = uuid.uuid4().hex
                         original = self.root / f'{photo_id}.jpg'
                         thumbnail = self.root / f'{photo_id}.thumb.jpg'
+                        working_path = self.root / f'{photo_id}.working.jpg'
                         try:
                             original.write_bytes(raw)
+                            working.save(working_path, 'JPEG', quality=90, optimize=True)
                             thumb.save(thumbnail, 'JPEG', quality=85)
                             db.execute('INSERT INTO photos VALUES (?,?,?,?,?)',
                                        (photo_id, digest, path.name, time.time(), len(raw)))
                         except Exception:
                             original.unlink(missing_ok=True)
                             thumbnail.unlink(missing_ok=True)
+                            working_path.unlink(missing_ok=True)
                             raise
                     db.execute('INSERT OR REPLACE INTO seen VALUES (?,?)', (key, sig))
                     self.pending.pop(key, None)
@@ -205,14 +210,26 @@ def photos(request: Request, offset: int = 0):
 @router.get('/photos/{photo_id}/{kind}')
 def image(photo_id: str, kind: str, request: Request):
     store = inbox(request)
-    if kind not in ('original', 'thumbnail'):
+    if kind not in ('original', 'thumbnail', 'working'):
         raise HTTPException(404)
     with store.lock, store.connect() as db:
         row = db.execute('SELECT name FROM photos WHERE id=?', (photo_id,)).fetchone()
     if row is None:
         raise HTTPException(404)
-    path = store.root / (f'{photo_id}.jpg' if kind == 'original' else f'{photo_id}.thumb.jpg')
-    return FileResponse(path, media_type='image/jpeg', filename=row[0] if kind == 'original' else None)
+    if kind == 'working':
+        path = store.root / f'{photo_id}.working.jpg'
+        # Existing catalogues predate working copies. Generate one on first use.
+        with store.lock:
+            if not path.exists():
+                try:
+                    source = load_source((store.root / f'{photo_id}.jpg').read_bytes()).convert('RGB')
+                    source.save(path, 'JPEG', quality=90, optimize=True)
+                except (ValueError, OSError) as exc:
+                    path.unlink(missing_ok=True)
+                    raise HTTPException(400, 'Could not prepare the saved photo') from exc
+    else:
+        path = store.root / (f'{photo_id}.jpg' if kind == 'original' else f'{photo_id}.thumb.jpg')
+    return FileResponse(path, media_type='image/jpeg', filename=row[0] if kind != 'thumbnail' else None)
 
 
 def storage_path():

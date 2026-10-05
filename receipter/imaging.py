@@ -9,10 +9,15 @@ import resvg_py
 import re
 
 CANONICAL_SCALE = 0.5
+WORKING_IMAGE_EDGE = 4096
 
 
 def load_source(raw: bytes, raster_width: int = 1200) -> Image.Image:
-    """Decode raster or self-contained SVG; never resolve external resources."""
+    """Decode into a bounded working copy; never resolve external SVG resources.
+
+    JPEG draft decoding reduces memory before loading the full-resolution pixels.
+    Pillow's decompression-bomb protections remain enabled for pathological inputs.
+    """
     try:
         raw = raw.removeprefix(b'\xef\xbb\xbf')
         if raw.lstrip().startswith(b'<'):
@@ -34,11 +39,14 @@ def load_source(raw: bytes, raster_width: int = 1200) -> Image.Image:
             raw = resvg_py.svg_to_bytes(svg_string=ElementTree.tostring(root, encoding='unicode'),
                                        width=raster_width, height=raster_width,
                                        skip_system_fonts=True)
-        source = Image.open(BytesIO(raw))
-        if source.width * source.height > 24_000_000:
-            raise ValueError('Image exceeds 24 megapixels')
-        source.load()
-        return ImageOps.exif_transpose(source).convert('RGBA')
+        with Image.open(BytesIO(raw)) as source:
+            # draft() is a decoder hint (JPEG/MPO); thumbnail handles other formats
+            # and JPEG dimensions that cannot be reached by decoder scaling alone.
+            scale = min(1, WORKING_IMAGE_EDGE / max(source.size))
+            target = tuple(max(1, round(side * scale)) for side in source.size)
+            source.draft(None, target)
+            source.thumbnail((WORKING_IMAGE_EDGE, WORKING_IMAGE_EDGE), Image.Resampling.LANCZOS)
+            return ImageOps.exif_transpose(source).convert('RGBA')
     except ValueError:
         raise
     except Exception as exc:

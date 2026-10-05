@@ -45,7 +45,7 @@ Contain ignores crop zoom and position. Forced black/red first uses monochrome q
 
 ### Upload limits
 
-Raster formats readable by Pillow (including PNG, JPEG, WebP, GIF first frame, BMP) and self-contained SVG are accepted. EXIF orientation is honored. Limits: 20 MiB per upload, 60 MiB combined, 16 uploaded assets, 24 megapixels per decoded raster, 2 MiB per SVG, 2,000,000 characters in the document JSON (including eraser strokes). SVGs rasterize to a bounded 1200-pixel box with preserved aspect ratio.
+Raster formats readable by Pillow (including PNG, JPEG, WebP, GIF first frame, BMP) and self-contained SVG are accepted. EXIF orientation is honored. Limits: 20 MiB per upload, 60 MiB combined, 16 uploaded assets, 2 MiB per SVG, 2,000,000 characters in the document JSON (including eraser strokes). SVGs rasterize to a bounded 1200-pixel box with preserved aspect ratio. Raster images are automatically downsampled to a working copy of at most 4096 pixels on the longest side before processing, without upscaling. JPEGs use decoder-level reduction where supported; other formats may require full decoding before resizing. The former 24-megapixel app limit is removed; Pillow’s decompression-bomb protection remains enabled.
 
 SVG external references, image elements (including embedded raster data), stylesheets, scripts, foreign objects and entity declarations are rejected. Local `#id` references and inline vector attributes are allowed. Outline text; system font discovery is disabled.
 

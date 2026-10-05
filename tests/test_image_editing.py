@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 from PIL import Image, ImageDraw
 from fastapi import UploadFile
 
-from receipter.imaging import BLACK, RED, WHITE, prepare_image
+from receipter.imaging import BLACK, RED, WHITE, WORKING_IMAGE_EDGE, load_source, prepare_image
 from receipter.escpos import _eight_dot_band
 
 
@@ -29,6 +29,41 @@ def prepare(raw=None, **edits):
 
 
 class ImageEditingTests(unittest.TestCase):
+    def test_high_megapixel_jpeg_is_downsampled_not_rejected(self):
+        data = BytesIO()
+        with Image.new('RGB', (6000, 4500), 'red') as image:
+            image.save(data, 'JPEG')
+        raw = data.getvalue()
+        source = load_source(raw)
+        self.assertEqual(source.size, (WORKING_IMAGE_EDGE, WORKING_IMAGE_EDGE * 3 // 4))
+        self.assertEqual(source.mode, 'RGBA')
+        with Image.open(BytesIO(raw)) as original:
+            self.assertEqual(original.size, (6000, 4500))
+        result = prepare_image(raw, frame_height=240)
+        self.assertEqual(result.colors.size, (400, 120))
+
+    def test_downsampling_preserves_exif_orientation(self):
+        data = BytesIO()
+        exif = Image.Exif()
+        exif[274] = 6
+        Image.new('RGB', (800, 400), 'red').save(data, 'JPEG', exif=exif)
+        with patch('receipter.imaging.WORKING_IMAGE_EDGE', 200):
+            self.assertEqual(load_source(data.getvalue()).size, (100, 200))
+
+    def test_non_jpeg_downsampling_preserves_transparency_and_small_images(self):
+        raw = png(Image.new('RGBA', (400, 200), (210, 0, 0, 80)))
+        with patch('receipter.imaging.WORKING_IMAGE_EDGE', 200):
+            source = load_source(raw)
+        self.assertEqual(source.size, (200, 100))
+        self.assertEqual(source.getpixel((100, 50))[3], 80)
+        self.assertEqual(load_source(png(Image.new('RGBA', (32, 16)))).size, (32, 16))
+
+    def test_pillow_decompression_bomb_protection_is_retained(self):
+        raw = png(Image.new('RGB', (100, 100)))
+        with patch.object(Image, 'MAX_IMAGE_PIXELS', 100):
+            with self.assertRaises(ValueError):
+                load_source(raw)
+
     def test_default_preserves_real_black_red_white_channels(self):
         colors = prepare().colors
         self.assertEqual(Counter(colors.tobytes()), {WHITE: 512, BLACK: 256, RED: 256})

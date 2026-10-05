@@ -112,6 +112,20 @@ class InboxTests(unittest.TestCase):
         self.settle()
         self.assertEqual(len(self.store.photos()), 1)
 
+    def test_working_copy_downsamples_and_keeps_original(self):
+        stream = io.BytesIO()
+        Image.new('RGB', (800, 600), 'blue').save(stream, 'JPEG')
+        raw = stream.getvalue()
+        self.store.configure(str(self.folder), True)
+        (self.folder / 'large.jpg').write_bytes(raw)
+        with patch('receipter.imaging.WORKING_IMAGE_EDGE', 200):
+            self.settle()
+        photo = self.store.photos()[0]
+        self.assertEqual((self.store.root / f"{photo['id']}.jpg").read_bytes(), raw)
+        with Image.open(self.store.root / f"{photo['id']}.working.jpg") as working:
+            self.assertEqual(working.size, (200, 150))
+        self.assertEqual((self.folder / 'large.jpg').read_bytes(), raw)
+
     def test_thumbnail_applies_exif_orientation(self):
         self.store.configure(str(self.folder), True)
         image = Image.new('RGB', (40, 60), 'red')
@@ -142,6 +156,15 @@ class InboxTests(unittest.TestCase):
                 self.assertEqual(client.get(f'/api/inbox/photos/{photo_id}/original').content, jpeg())
                 thumbnail = client.get(f'/api/inbox/photos/{photo_id}/thumbnail')
                 self.assertEqual(thumbnail.headers['content-type'], 'image/jpeg')
+                working_path = app.state.inbox.root / f'{photo_id}.working.jpg'
+                self.assertTrue(working_path.exists())
+                working_path.unlink()  # Older catalogues generate a working copy on demand.
+                working = client.get(f'/api/inbox/photos/{photo_id}/working')
+                self.assertEqual(working.status_code, 200)
+                self.assertEqual(working.headers['content-type'], 'image/jpeg')
+                self.assertTrue(working_path.exists())
+                with Image.open(io.BytesIO(working.content)) as image:
+                    self.assertEqual(image.size, (40, 60))
                 self.assertEqual(client.get('/api/inbox/photos/nope/original').status_code, 404)
                 self.assertEqual(client.get(f'/api/inbox/photos/{photo_id}/bad').status_code, 404)
             with TestClient(app) as client:

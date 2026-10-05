@@ -83,7 +83,7 @@
     try {
       const files = [];
       for (const id of ids) {
-        const response = await fetch(`/api/inbox/photos/${id}/original`);
+        const response = await fetch(`/api/inbox/photos/${id}/working`);
         if (!response.ok) throw new Error('Could not load photo');
         files.push(new File([await response.blob()], photos.find(p => p.id === id)?.name || 'photo.jpg', {type:'image/jpeg'}));
       }
