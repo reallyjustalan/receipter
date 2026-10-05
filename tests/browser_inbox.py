@@ -41,7 +41,8 @@ def main():
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     page = browser.new_page()
-                    errors, prints = [], []
+                    errors, prints, working_requests = [], [], []
+                    page.on('request', lambda request: working_requests.append(request.url) if request.url.endswith('/working') else None)
                     page.on('pageerror', lambda error: errors.append(str(error)))
                     def reject_print(route):
                         prints.append(route.request.url)
@@ -62,31 +63,39 @@ def main():
                     expect(page.locator('#print-reasons')).to_contain_text('brew install libusb', timeout=10000)
                     expect(page.locator('#print-receipt')).to_be_disabled()
                     page.locator('#open-inbox').click()
-                    expect(page.locator('#inbox-status')).to_contain_text('Paused')
+                    expect(page.locator('#inbox-status')).to_contain_text('Choose a camera folder')
                     expect(page.locator('#inbox-enabled')).to_be_checked()
                     expect(page.locator('#inbox-add')).to_be_disabled()
                     expect(page.locator('#inbox-latest')).to_be_disabled()
                     page.locator('#inbox-folder').fill(f'  "{folder}"  ')
                     page.get_by_role('button', name='Save settings').click()
                     expect(page.locator('#inbox-status')).to_contain_text('Watching')
-                    expect(page.locator('#inbox-photos label')).to_have_count(0)
-                    Image.new('RGB', (80, 60), 'blue').save(folder / 'new.JfIf', 'JPEG')
                     expect(page.locator('#inbox-photos label')).to_have_count(1, timeout=15000)
-                    expect(page.locator('#inbox-photos')).to_contain_text('new.JfIf')
+                    expect(page.locator('#inbox-existing')).not_to_be_checked()
+                    page.locator('#close-inbox').click()
+                    page.locator('[data-mode="layout"]').click()
+                    Image.new('RGB', (80, 60), 'blue').save(folder / 'new.JfIf', 'JPEG')
+                    expect(page.locator('.tray-photo')).to_have_count(2, timeout=15000)
+                    expect(page.locator('#tray-photos')).to_contain_text('new.JfIf')
+                    expect(page.locator('#photo-count')).to_have_text('0 / 3')
+                    page.reload()
+                    expect(page.locator('.tray-photo')).to_have_count(2)
+                    # Failed downloads do not mutate the receipt; a retry can succeed.
+                    page.route('**/api/inbox/photos/*/working', lambda route: route.fulfill(status=503))
+                    page.locator('.tray-photo button').first.click()
+                    expect(page.locator('#tray-status')).to_contain_text('Could not load photo')
+                    expect(page.locator('#photo-count')).to_have_text('0 / 3')
+                    page.unroute('**/api/inbox/photos/*/working')
+                    page.locator('.tray-photo').first.drag_to(page.locator('#section-overlays button').first, source_position={'x': 10, 'y': 10})
+                    expect(page.locator('#photo-count')).to_have_text('1 / 3')
+                    expect(page.locator('#sections li').first).to_contain_text('PHOTO')
+                    expect(page.locator('#preview-state')).to_contain_text('Up to date')
+                    page.locator('#open-inbox').click()
                     page.locator('#inbox-enabled').uncheck()
                     page.locator('#inbox-import').click()
                     expect(page.locator('#inbox-enabled')).to_be_checked()
-                    expect(page.locator('#inbox-photos label')).to_have_count(2, timeout=15000)
-                    page.reload()
-                    page.locator('#open-inbox').click()
-                    expect(page.locator('#inbox-photos label')).to_have_count(2)
                     page.locator('#inbox-photos input').first.check()
                     page.locator('#inbox-add').click()
-                    expect(page.locator('#photo-inbox')).not_to_be_visible()
-                    expect(page.locator('#photo-count')).to_have_text('1 / 3')
-                    expect(page.locator('#preview-state')).to_contain_text('Up to date')
-                    page.locator('#open-inbox').click()
-                    page.locator('#inbox-latest').click()
                     expect(page.locator('#photo-inbox')).not_to_be_visible()
                     expect(page.locator('#photo-count')).to_have_text('2 / 3')
                     page.locator('#open-inbox').click()
@@ -95,16 +104,37 @@ def main():
                     expect(page.locator('#inbox-add')).to_be_disabled()
                     page.locator('#inbox-latest').click()
                     expect(page.locator('#photo-count')).to_have_text('3 / 3')
+                    assert len(working_requests) == 2, working_requests  # One failed request, one successful cached copy.
                     page.locator('#open-inbox').click()
                     expect(page.locator('#inbox-latest')).to_be_disabled()
                     expect(page.locator('#inbox-add')).to_be_disabled()
+                    page.locator('#close-inbox').click()
+                    expect(page.locator('.tray-photo button').first).to_be_disabled()
+                    page.locator('.tray-photo').first.drag_to(page.locator('#receipt-stage'), source_position={'x': 10, 'y': 10})
+                    expect(page.locator('#tray-status')).to_contain_text('room for 0')
+                    expect(page.locator('#photo-count')).to_have_text('3 / 3')
+                    # Desktop image drop works independently of the camera catalogue.
+                    desktop = browser.new_page()
+                    desktop.route('**/api/status', mock_status)
+                    desktop.route('**/api/print*', reject_print)
+                    desktop.goto(base)
+                    desktop.evaluate('''async () => {
+                      const canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 60;
+                      const blob = await new Promise(resolve => canvas.toBlob(resolve));
+                      const transfer = new DataTransfer();
+                      transfer.items.add(new File([blob], 'desktop.png', {type: 'image/png'}));
+                      document.getElementById('receipt-stage').dispatchEvent(new DragEvent('drop', {bubbles: true, dataTransfer: transfer}));
+                    }''')
+                    expect(desktop.locator('#photo-count')).to_have_text('1 / 3')
+                    expect(desktop.locator('#preview-state')).to_contain_text('Up to date')
+                    desktop.close()
                     assert not errors, errors
                     assert not prints, prints
                     browser.close()
             finally:
                 server.terminate()
                 server.wait(timeout=15)
-    print('Folder ingestion, explicit existing import, persistence and add-to-receipt passed; nothing printed.')
+    print('Automatic inbox population, background tray updates, drag/drop insertion, desktop file drop, failed-load retry, persistence and capacity guards passed; nothing printed.')
 
 
 if __name__ == '__main__':

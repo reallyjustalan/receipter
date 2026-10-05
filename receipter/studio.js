@@ -214,6 +214,7 @@
     document.querySelectorAll('#crop-controls input').forEach(input => input.disabled = contain);
   }
   function changed() {
+    window.dispatchEvent(new Event('receipter-receipt-changed'));
     dirty = true;
     revision++;
     snapshot = null;
@@ -492,10 +493,11 @@
     if (file.size > 20*1024*1024) { tell(`${file.name} is larger than 20 MB.`); return false; }
     return true;
   }
-  function addPhotoFiles(files) {
+  function addPhotoFiles(files, beforeId = null) {
     const available = Math.min(3-documentState.blocks.filter(b=>b.type==='photo').length,16-documentState.blocks.length);
     if (files.length > available) tell(`Up to three photos per receipt. Only the first ${available} files were added.`);
-    let index = documentState.blocks.findIndex(b=>b.type==='footer');
+    let index = beforeId ? documentState.blocks.findIndex(b=>b.id===beforeId) : -1;
+    if (index < 0) index = documentState.blocks.findIndex(b=>b.type==='footer');
     if (index < 0) index = documentState.blocks.length;
     for (const file of files.slice(0,available)) {
       if (!validUpload(file)) continue;
@@ -509,8 +511,45 @@
     $('photo-upload').value = '';
   };
   window.addEventListener('receipter-inbox-add', event => {
-    addPhotoFiles(event.detail);
+    addPhotoFiles(event.detail.files, event.detail.beforeId);
     setMode('layout');
+  });
+  // Accept camera tray photos or desktop files without interfering with section reordering.
+  const photoDragType = 'application/x-receipter-photo';
+  function photoDropTarget(event) {
+    return event.target.closest('#receipt-stage, #sections-panel');
+  }
+  document.addEventListener('dragover', event => {
+    const types = [...event.dataTransfer.types];
+    if (!types.includes(photoDragType) && !types.includes('Files')) return;
+    event.preventDefault(); // Never navigate away from the draft to a dropped file.
+    if (photoDropTarget(event)) {
+      event.dataTransfer.dropEffect = 'copy';
+      photoDropTarget(event).classList.add('photo-drop-active');
+    } else event.dataTransfer.dropEffect = 'none';
+  });
+  function clearPhotoDrop() {
+    document.querySelectorAll('.photo-drop-active').forEach(el => el.classList.remove('photo-drop-active'));
+  }
+  document.addEventListener('dragleave', event => {
+    if (photoDropTarget(event) && !photoDropTarget(event).contains(event.relatedTarget)) clearPhotoDrop();
+  });
+  document.addEventListener('dragend', clearPhotoDrop);
+  document.addEventListener('drop', event => {
+    clearPhotoDrop();
+    const types = [...event.dataTransfer.types];
+    if (!types.includes(photoDragType) && !types.includes('Files')) return;
+    event.preventDefault();
+    if (!photoDropTarget(event)) return;
+    const beforeId = event.target.closest('[data-select]')?.dataset.select || event.target.closest('li[data-id]')?.dataset.id || null;
+    if (types.includes(photoDragType)) {
+      const id = event.dataTransfer.getData(photoDragType);
+      window.dispatchEvent(new CustomEvent('receipter-inbox-drop', {detail:{id, beforeId}}));
+    } else {
+      const files = [...event.dataTransfer.files].filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|jpe|jfif|jif|jfi|webp|gif|bmp|svg)$/i.test(file.name));
+      if (!files.length) { tell('Drop image files to add photos.'); return; }
+      addPhotoFiles(files, beforeId); setMode('layout');
+    }
   });
   window.receipterPhotoCapacity = () => Math.min(3-documentState.blocks.filter(b=>b.type==='photo').length, 16-documentState.blocks.length);
   $('asset-upload').onchange = () => {

@@ -49,6 +49,16 @@ class InboxTests(unittest.TestCase):
         self.assertEqual((self.store.root / f"{photo['id']}.jpg").read_bytes(), jpeg())
         self.assertTrue((self.folder / 'old.JPG').exists())
 
+    def test_disappearing_file_does_not_block_other_imports(self):
+        self.store.configure(str(self.folder), True)
+        missing = self.folder / 'a-missing.jpg'
+        valid = self.folder / 'b-valid.jpg'
+        valid.write_bytes(jpeg())
+        with patch.object(self.store, 'files', return_value=[missing, valid]):
+            self.settle()
+        self.assertEqual(len(self.store.photos()), 1)
+        self.assertEqual(self.store.status()['error'], '')
+
     def test_waits_for_stability_and_recovers_from_partial_jpeg(self):
         self.store.configure(str(self.folder), True)
         path = self.folder / 'new.jpg'

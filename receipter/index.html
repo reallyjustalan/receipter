@@ -24,6 +24,13 @@
       <div class="panel-heading"><p class="eyebrow">YOUR RECEIPT</p><h2>Top to bottom</h2><p class="muted">Drag sections, or use the arrows.</p></div>
       <ol id="sections" aria-label="Receipt sections"></ol>
       <div class="add-blocks"><p class="eyebrow">ADD A SECTION</p><button id="add-photos" class="primary">＋ Photos <span id="photo-count">0 / 3</span></button><div class="add-grid"><button data-add="header">＋ Header / logo</button><button data-add="footer">＋ Itemised footer</button><button data-add="text">＋ Text</button><button data-add="signature">＋ Signature</button><button data-add="spacer">＋ Space</button></div></div>
+      <section id="photo-tray" aria-labelledby="photo-tray-title">
+        <h3 id="photo-tray-title">Camera photos</h3>
+        <p id="tray-status" role="status" aria-live="polite">Loading saved photos…</p>
+        <p class="muted">Drag a photo onto the receipt or a section to insert it. Or click Add.</p>
+        <div id="tray-photos"></div>
+        <button id="tray-settings">Set up / browse photo inbox</button>
+      </section>
       <p class="session-note">Your draft stays in this tab. Download the receipt PNG before leaving; editable drafts are not saved.</p>
     </aside>
     <section class="stage" aria-label="Live receipt preview">
@@ -52,6 +59,7 @@
     <form id="inbox-settings">
       <label>Folder path on this computer<input id="inbox-folder" type="text" placeholder="/Users/you/Pictures/Camera Inbox"></label>
       <label><input id="inbox-enabled" type="checkbox" checked> Watch for new JPEGs</label>
+      <label><input id="inbox-existing" type="checkbox" checked> Include JPEGs already in this folder</label>
       <button type="submit">Save settings</button>
       <button id="inbox-import" type="button">Import existing JPEGs</button>
     </form>

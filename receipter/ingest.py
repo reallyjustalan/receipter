@@ -111,7 +111,14 @@ class Inbox:
             for path in files:
                 key = str(path)
                 present.add(key)
-                sig = self.signature(path)
+                try:
+                    sig = self.signature(path)
+                except FileNotFoundError:
+                    self.pending.pop(key, None)
+                    continue  # Transfers may be renamed/deleted between listing and stat.
+                except OSError as exc:
+                    self.error = f'{path.name}: {exc}'
+                    continue
                 row = db.execute('SELECT signature FROM seen WHERE path=?', (key,)).fetchone()
                 if row and row[0] == sig:
                     continue
