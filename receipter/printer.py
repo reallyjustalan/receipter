@@ -121,7 +121,23 @@ def target_status() -> dict:
     if not cached:
         try:
             device = usb.core.find(idVendor=DEFAULT_VENDOR_ID, idProduct=DEFAULT_PRODUCT_ID)
-            _cached_usb_status = {"connected": device is not None, "devices": usb_devices()}
+            devices = usb_devices()
+            message = ''
+            if device is None:
+                message = (f'No USB printer with IDs {DEFAULT_VENDOR_ID:04x}:{DEFAULT_PRODUCT_ID:04x}. '
+                           'Connect and power on the printer on the Mac running the server.')
+                epsons = [d for d in devices if d['vendor_id'] == '0x04b8']
+                if epsons:
+                    message += ' Other Epson USB IDs found: ' + ', '.join(
+                        f"{d['vendor_id']}:{d['product_id']}" for d in epsons) + '. Check PRINTER_PRODUCT_ID.'
+            _cached_usb_status = {"connected": device is not None, "devices": devices,
+                                  "detection_error": message}
+        except usb.core.NoBackendError:
+            _cached_usb_status = {"connected": False, "devices": [], "detection_error":
+                                  'USB backend missing. On the server Mac, run brew install libusb, then restart Receipter.'}
+        except usb.core.USBError as exc:
+            _cached_usb_status = {"connected": False, "devices": [], "detection_error":
+                                  f'USB access failed: {exc}. Close other printer apps and check the cable/adapter.'}
         finally:
             _usb_lock.release()
     return {

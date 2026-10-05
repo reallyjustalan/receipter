@@ -7,13 +7,13 @@ Receipter watches a folder on the server computer; it does not communicate with 
 3. Open **Photo inbox** in the top bar.
 4. Enter the folder's absolute path (or a path beginning with `~`), enable **Watch for new JPEGs**, and click **Save settings**.
 5. Take a photo. Its JPEG appears automatically after transfer completes, usually within a few seconds.
-6. Select thumbnails and click **Add selected to receipt**. A receipt can contain up to three photos. Use the existing editor to adjust them and **Printer preview** to choose copies and explicitly print.
+6. Click **Add latest photo** for the newest imported shot, or select thumbnails and click **Add selected to receipt**. A receipt can contain up to three photos. Use the existing editor to adjust them and **Printer preview** to choose copies and explicitly print.
 
-Files already present when a new folder is selected are not imported automatically. Click **Import existing JPEGs** to include those files. Watching must be enabled for this import. Pause watching by unchecking the box and saving. Shots received while paused are picked up when watching resumes, including after a restart.
+Files already present when a new folder is selected are not imported automatically. Click **Import existing JPEGs** to include those files. This button saves your folder settings and enables watching too. Watching is preselected when setting up your first folder. Pasted paths may include surrounding spaces or quotes. Pause watching by unchecking the box and saving. Shots received while paused are picked up when watching resumes, including after a restart.
 
 ## Storage and limits
 
-- Only immediate `.jpg` / `.jpeg` files are scanned, case-insensitively. No subfolders, symlinks, RAW files or other formats.
+- Only immediate `.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.jif` and `.jfi` files are scanned, case-insensitively (including `.JPG`, `.JPEG` and mixed case). Contents must decode as JPEG regardless of the extension. No subfolders, symlinks, RAW files or other formats.
 - Maximum 20 MB per JPEG. The importer waits for unchanged size/mtime across two scans and decodes the JPEG before accepting it. Invalid or incomplete images are retried; an error appears in the inbox.
 - Originals are copied without modification. Thumbnails apply EXIF orientation. The app never deletes files from the source folder or camera.
 - Identical content is imported only once, even with a different filename. Changed content can be imported as a new photo.

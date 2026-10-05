@@ -63,6 +63,36 @@ Read the reason under the **Print** button:
 
 The historical source of intermittent corruption is not established. Complete-band writes preserve framing at host transfer boundaries, but this is not proof against device data loss.
 
+## Use the same printer on another Mac
+
+Install the native USB library on **each Mac running the server** (Python dependencies alone do not provide it):
+
+```sh
+brew install libusb uv
+git clone https://github.com/reallyjustalan/receipter.git
+cd receipter
+uv sync
+uv run main.py
+```
+
+Open <http://localhost:8022>, not the HTML file directly. Plug the powered-on printer into this Mac. If viewing from a different laptop, USB discovery still happens on the computer running Receipter, not in the browser.
+
+Detection uses numeric USB IDs (`04b8:0202` by default), **not** the printer's name, descriptor strings, serial number or a laptop-specific port. The same printer and USB adapter should keep these IDs across Macs and hubs. Different interface hardware can have different IDs; the status API reports other Epson IDs but never automatically selects a different printer.
+
+If detection fails, open <http://localhost:8022/api/status> or run:
+
+```sh
+curl -i http://localhost:8022/api/status
+system_profiler SPUSBDataType
+```
+
+- **USB backend missing:** install `libusb`, restart the server and refresh the page. Use Homebrew for the Mac's native architecture (avoid mixing Intel/Rosetta Python with ARM libraries).
+- **No matching IDs:** check power, data cable, hub and macOS accessory permission if prompted. Compare the OS USB report and API `devices` against the expected IDs. Do not change IDs just to select an unrelated USB device.
+- **USB access failed:** close other printer/tethering applications that might own the interface and try a direct USB connection. Detection alone does not guarantee the interface can be claimed for printing.
+- **Non-JSON response / HTTP 500:** inspect the server terminal traceback. Safari may previously have reported this as “The string did not match the expected pattern”; that is not evidence of a printer-name mismatch.
+
+Folder settings and inbox photos are local to each Mac; configure the camera destination on the new Mac separately. None of these checks sends print data.
+
 ## Configure USB identifiers
 
 Set the environment variables listed in the [printer reference](../reference/printer.md) before startup. The backend expects an already configured device on interface 0 and deliberately avoids reset/SET_CONFIGURATION. Do not run another print application against the same USB device while testing.

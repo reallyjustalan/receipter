@@ -2,7 +2,10 @@
 
 A local photo-booth receipt builder for the Epson TM-U220: SVG logos, up to three independently edited photos, itemised costs, text and signatures in reorderable sections.
 
+On macOS, install the native USB library first (also needed on a new laptop):
+
 ```sh
+brew install libusb uv
 uv sync
 uv run main.py
 ```

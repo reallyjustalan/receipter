@@ -56,7 +56,7 @@ def main():
                     break
                 except OSError: time.sleep(.1)
             else: raise RuntimeError('Test server failed to start')
-            status.update(connected=True,stopped=False,printing=False)
+            status.update(connected=True,stopped=False,printing=False,detection_error='')
             with sync_playwright() as p:
                 browser = p.chromium.launch()
                 page = browser.new_page(viewport={'width':1440,'height':1100},device_scale_factor=1,timezone_id='UTC')

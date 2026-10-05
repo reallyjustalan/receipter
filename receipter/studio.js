@@ -231,7 +231,12 @@
     timer = setTimeout(refreshPreview, 120);
   }
   async function responseJSON(response) {
-    const result = await response.json();
+    let result;
+    try {
+      result = JSON.parse(await response.text());
+    } catch {
+      throw new Error(`Server returned a non-JSON response (HTTP ${response.status}). Check the server terminal for errors, then restart Receipter and refresh this page.`);
+    }
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail || result));
     return result;
   }
@@ -385,7 +390,8 @@
   async function refreshStatus() {
     try {
       status = await responseJSON(await fetch('/api/status'));
-      statusError = '';
+      statusError = status.detection_error || '';
+      $('connection').title = statusError;
       $('connection').textContent = status.stopped || stoppedLocally ? 'Printer stopped' : status.printing ? 'Printing…' : status.connected ? 'Printer connected' : 'Printer offline';
       $('connection').classList.toggle('online',status.connected && !status.stopped && !stoppedLocally);
       $('resume').hidden = !(status.stopped || stoppedLocally);

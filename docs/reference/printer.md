@@ -8,6 +8,8 @@ Defaults: vendor `0x04b8`, product `0x0202` (EPSON UB-U03II adapter), interface 
 
 `PRINTER_PROFILE` defaults to `TM-U220B`. `TM-U220` selects a private family-profile copy with the reported A-model partial cutter enabled. Both produce the same ASCII/partial-cut commands. Neither changes firmware, DIP switches or the library’s global capability database. `PORT` defaults to 8022. The app binds to loopback.
 
+`GET /api/status` includes `devices` (numeric IDs, display-only descriptor names and `is_target`) and `detection_error` (empty on successful detection). Matching uses IDs only. Missing native USB backends and USB access errors return structured diagnostics instead of an unhandled HTTP 500. Install `libusb` on each server Mac; see [new-Mac troubleshooting](../how-to/operate.md#use-the-same-printer-on-another-mac). Detection is not proof that printing can claim the interface.
+
 ## Transport contract
 
 - Normal transfers: up to 1024 bytes per USB write, no artificial sleeps, 5-second write timeout. Image transfer boundaries preserve complete 8-row black/red bands (at most 825 bytes).

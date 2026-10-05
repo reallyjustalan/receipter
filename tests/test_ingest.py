@@ -87,6 +87,31 @@ class InboxTests(unittest.TestCase):
         self.settle()
         self.assertEqual(self.store.photos(), [])
 
+    def test_all_jpeg_extensions_case_insensitive(self):
+        self.store.configure(str(self.folder), True)
+        extensions = ['jpg', 'JPEG', 'JpE', 'jfif', 'JIF', 'jFi']
+        for index, extension in enumerate(extensions):
+            (self.folder / f'photo.{extension}').write_bytes(jpeg((index * 35, 50, 100)))
+        self.settle()
+        self.assertEqual(len(self.store.photos()), len(extensions))
+        self.assertEqual(self.store.status()['error'], '')
+
+    def test_supported_extension_still_requires_jpeg_content(self):
+        self.store.configure(str(self.folder), True)
+        Image.new('RGB', (40, 60)).save(self.folder / 'not-jpeg.jfif', 'PNG')
+        self.settle()
+        self.assertEqual(self.store.photos(), [])
+        self.assertIn('Not a JPEG', self.store.status()['error'])
+
+    def test_pasted_folder_paths_and_import_while_resuming(self):
+        (self.folder / 'existing.jpe').write_bytes(jpeg())
+        for quote in ('"', "'"):
+            status = self.store.configure(f'  {quote}{self.folder}{quote}  ', False)
+            self.assertEqual(status['folder'], str(self.folder.resolve()))
+        self.store.configure(str(self.folder), True, import_existing=True)
+        self.settle()
+        self.assertEqual(len(self.store.photos()), 1)
+
     def test_thumbnail_applies_exif_orientation(self):
         self.store.configure(str(self.folder), True)
         image = Image.new('RGB', (40, 60), 'red')

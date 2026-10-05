@@ -18,6 +18,7 @@ from PIL import Image, ImageOps
 from pydantic import BaseModel
 
 MAX_IMAGE = 20 * 1024 * 1024
+JPEG_EXTENSIONS = {'.jpg', '.jpeg', '.jpe', '.jfif', '.jif', '.jfi'}
 
 
 class Inbox:
@@ -55,10 +56,14 @@ class Inbox:
     @staticmethod
     def files(folder):
         return sorted(p for p in folder.iterdir() if not p.is_symlink() and p.is_file()
-                      and p.suffix.lower() in ('.jpg', '.jpeg'))
+                      and p.suffix.lower() in JPEG_EXTENSIONS)
 
     def configure(self, folder: str, enabled: bool, import_existing: bool = False):
-        path = Path(folder).expanduser().resolve() if folder.strip() else None
+        # Finder/terminal paths are often pasted with surrounding quotes or spaces.
+        folder = folder.strip()
+        if len(folder) >= 2 and folder[0] == folder[-1] and folder[0] in ('"', "'"):
+            folder = folder[1:-1]
+        path = Path(folder).expanduser().resolve() if folder else None
         if enabled and path is None:
             raise ValueError('Choose a folder first.')
         if path is not None and not path.is_dir():
