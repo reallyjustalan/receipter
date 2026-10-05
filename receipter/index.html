@@ -12,14 +12,14 @@
   <div id="top-bar">
   <header class="app-header">
     <a class="brand" href="/" aria-label="Receipter home">receipter</a>
-    <div class="printer-tools"><button id="open-inbox">Photo inbox</button><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
+    <div class="printer-tools"><button id="open-profiles" disabled>Profiles</button><button id="open-inbox">Photo inbox</button><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
   </header>
   <nav class="workspace-nav" aria-label="Editing workspace">
     <div class="modes"><button data-mode="layout" aria-pressed="true">01 <span>Receipt layout</span></button><button data-mode="image" aria-pressed="false" disabled>02 <span>Image editor</span></button><button data-mode="final" aria-pressed="false">03 <span>Printer preview</span></button></div>
     <label class="zoom-control">View <select id="zoom"><option value="0.65">65%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></label>
   </nav>
   </div>
-  <main id="workspace" class="workspace" data-mode="layout">
+  <main id="workspace" class="workspace" data-mode="layout" inert>
     <aside id="sections-panel" class="sections-panel">
       <div class="panel-heading"><p class="eyebrow">YOUR RECEIPT</p><h2>Top to bottom</h2><p class="muted">Drag sections, or use the arrows.</p></div>
       <ol id="sections" aria-label="Receipt sections"></ol>
@@ -31,7 +31,7 @@
         <div id="tray-photos"></div>
         <button id="tray-settings">Set up / browse photo inbox</button>
       </section>
-      <p class="session-note">Your draft stays in this tab. Download the receipt PNG before leaving; editable drafts are not saved.</p>
+      <p class="session-note">Save logos, text and layout with Profiles. Camera photos and unsaved edits stay in this tab.</p>
     </aside>
     <section class="stage" aria-label="Live receipt preview">
       <div class="stage-heading"><span id="stage-title">LIVE RECEIPT</span><span id="dot-count">400 DOTS WIDE</span></div>
@@ -70,6 +70,21 @@
     <div id="inbox-photos"></div>
     <button id="inbox-more" hidden>Load more</button>
   </dialog>
+  <dialog id="receipt-profiles" aria-labelledby="profiles-title">
+    <div class="inbox-heading"><h2 id="profiles-title">Receipt profiles</h2><button id="close-profiles">Close</button></div>
+    <p>Save the current logo, text, section layout, image adjustments, automatic-date options and print finishing settings. Camera photos are excluded. Nothing prints automatically.</p>
+    <form id="profile-form">
+      <label>Saved profile<select id="profile-select"><option value="">New profile</option></select></label>
+      <label>Profile name<input id="profile-name" required maxlength="80" placeholder="Photo booth"></label>
+      <label><input id="profile-default" type="checkbox" checked> Load this profile by default when opening Receipter</label>
+      <button type="submit">Save current defaults</button>
+    </form>
+    <button id="profile-new">New profile</button>
+    <button id="profile-load" disabled>Load selected profile</button>
+    <p id="profile-status" role="status" aria-live="polite"></p>
+    <p>Saving an existing profile replaces its defaults. Profiles are stored on this server, not just in this browser. Loading replaces the current receipt.</p>
+  </dialog>
+  <script src="/profiles.js"></script>
   <script src="/studio.js"></script>
   <script src="/inbox.js"></script>
 </body>

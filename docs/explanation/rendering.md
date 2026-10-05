@@ -38,7 +38,7 @@ Client revisions and request cancellation prevent an older render response from 
 
 ## Deliberate limits
 
-There is no print queue, persistent asset library or editable project storage. Browser drafts and uploaded files stay in the tab; servers retain only bounded rendered snapshots. Rendering a new preview currently uploads the referenced images again. Raster sources are downsampled to a 4096-pixel working edge (JPEG decoder reduction where supported); original megapixels are not capped by the app, though Pillow’s decompression-bomb protections remain enabled. Requests are limited by file size, total asset size, document size, section count, photo count and final row count. At most two receipt renders run concurrently.
+There is no print queue or full customer-receipt project storage. Named profiles persist reusable default documents and their logo assets on the server; camera shots and unsaved browser drafts stay in the tab. Servers also retain bounded rendered snapshots. Rendering a new preview currently uploads the referenced images again. Raster sources are downsampled to a 4096-pixel working edge (JPEG decoder reduction where supported); original megapixels are not capped by the app, though Pillow’s decompression-bomb protections remain enabled. Requests are limited by file size, total asset size, document size, section count, photo count and final row count. At most two receipt renders run concurrently.
 
 The existing USB transport and diagnostic endpoints remain separate from the creator UI. Buffered printing has been physically confirmed on the target setup; complete multi-photo/red-black receipts and this composition path still require physical validation. Software tests establish byte and preview consistency, not mechanical correctness.
 

@@ -625,6 +625,43 @@
     if (eraseDrag) { eraseDrag = null; renderInspector(); changed(); paintPreview(); }
   };
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
-  renderList(); renderMode(); renderInspector(); refreshPreview(); refreshStatus();
+  function checkProfileIdle() {
+    if (busy || status?.printing || backgroundJobs.size) throw new Error('Wait for printing or image processing to finish before saving or loading a profile.');
+  }
+  window.receipterProfileSnapshot = () => {
+    checkProfileIdle();
+    const blocks = documentState.blocks.filter(block => block.type !== 'photo');
+    if (!blocks.length) throw new Error('Add a header, text or another default section before saving a profile.');
+    const logos = new Map();
+    for (const block of blocks) {
+      if (block.type === 'header' && block.asset) {
+        const file = assets.get(block.asset);
+        if (!file) throw new Error('The logo could not be found. Upload it again before saving.');
+        logos.set(block.asset, file);
+      }
+    }
+    return {document:structuredClone({blocks}), assets:logos,
+      options:{automatic_dates:blocks.filter(block => automaticDates.has(block.id)).map(block => block.id), finishing:{...finishing}}};
+  };
+  window.receipterApplyProfile = (document, options, logos) => {
+    checkProfileIdle();
+    documentState = structuredClone(document);
+    assets.clear(); originalImages.clear(); automaticDates.clear();
+    for (const [id, file] of logos) assets.set(id, file);
+    for (const id of options.automatic_dates) automaticDates.add(id);
+    finishing = {...options.finishing};
+    selected = documentState.blocks[0]?.id;
+    mode = 'layout'; eraseSource = null; eraseDrag = null; cropDrag = null; uploadTarget = null;
+    renderList(); renderMode(); renderInspector(); changed();
+  };
+  renderList(); renderMode(); renderInspector(); refreshStatus();
+  window.receipterInitializeProfile().catch(error => {
+    tell(`Could not load default profile: ${error.message}. Saved profiles have not been changed.`);
+  }).finally(() => {
+    $('workspace').inert = false;
+    $('open-profiles').disabled = false;
+    dirty = false;
+    refreshPreview();
+  });
   setInterval(refreshStatus, 3000);
 })();

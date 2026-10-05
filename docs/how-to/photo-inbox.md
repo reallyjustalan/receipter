@@ -24,7 +24,7 @@ Existing JPEGs are included on first setup by default. Uncheck **Include JPEGs a
 - Selections download compressed working copies concurrently, with loading/error feedback. A bounded in-tab cache avoids downloading the same photo repeatedly. Failed downloads leave the receipt unchanged; retry explicitly. The three-photo limit is checked again after downloads.
 - Folder scanning runs every two seconds while enabled, independently of whether the inbox is open. A periodic rescan also catches files received while the server was stopped.
 
-Nothing prints automatically. The inbox adds selected photos to the current receipt; per-photo batch printing and saved receipt templates are not implemented.
+Nothing prints automatically. The inbox adds selected photos to the current receipt; per-photo batch printing is not implemented. [Named receipt profiles](receipt-profiles.md) save reusable logos, text and layout without saving camera photo sections.
 
 ## Troubleshooting
 

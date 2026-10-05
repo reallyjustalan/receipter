@@ -45,7 +45,7 @@ The mask keeps detected people rather than arbitrary foreground objects. Check h
 
 **Restore original background** reverses removal without resetting crop or tone settings. **Reset image adjustments** only resets those adjustments, not the background. Replacing the image discards its saved original. Background removal preserves the working image’s dimensions (up to 4096 pixels on the longest side) and existing transparency; transparent areas are composited onto white before the usual tone/ink processing. Processing runs before cropping and dithering. Printing is blocked while removal is pending.
 
-Originals and processed images live only in the current browser tab. Input and output are limited to 20 MB each. High-resolution images are automatically downsampled with Pillow to at most 4096 pixels on the longest side; there is no app-level megapixel rejection. JPEG reduced-resolution decoding saves memory before resizing. Pillow’s decompression-bomb safeguards remain enabled. Inference uses a copy bounded to 2048 pixels on its longest side; the mask is resized to the working image’s dimensions.
+Originals and processed images live in the current browser tab; [saving a profile](receipt-profiles.md) also persists its current logo assets on the server. Input and output are limited to 20 MB each. High-resolution images are automatically downsampled with Pillow to at most 4096 pixels on the longest side; there is no app-level megapixel rejection. JPEG reduced-resolution decoding saves memory before resizing. Pillow’s decompression-bomb safeguards remain enabled. Inference uses a copy bounded to 2048 pixels on its longest side; the mask is resized to the working image’s dimensions.
 
 ## Create an itemised footer
 

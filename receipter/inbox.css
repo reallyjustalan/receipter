@@ -1,3 +1,8 @@
+#receipt-profiles { width: min(650px, 90vw); max-height: 85vh; overflow: auto; padding: 24px; border: 1px solid #777; background: #fff; color: #222; }
+#receipt-profiles::backdrop { background: #0008; }
+#profile-form { display: grid; gap: 12px; margin-bottom: 12px; }
+#profile-name, #profile-select { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
+#open-profiles { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #photo-inbox { width: min(900px, 90vw); max-height: 85vh; overflow: auto; padding: 24px; border: 1px solid #777; background: #fff; color: #222; }
 #photo-inbox::backdrop { background: #0008; }
 .inbox-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }

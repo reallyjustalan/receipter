@@ -103,3 +103,15 @@ With cutting, feed must be 8–20 lines; without cutting, 0–20. Invalid finish
 Response includes `job_id`, `build_id`, `job_sha256`, accepted `bytes`, `dots`, `usb_parts`, `density_mode`, `feed_lines`, `cut`, `cut_command_transferred`, `copies` and a human-readable message. `copies` is the requested count whose full batch was accepted by USB, not a physical count. `bytes`, `usb_parts` and `job_sha256` describe the whole batch; `dots` describes one copy. USB success is not physical confirmation. STOP or an error discards all remaining unsent copies; no completed-copy count is inferred from an uncertain failure.
 
 Validation errors return 400 (or 422 for malformed form types). Oversized documents/uploads return 413. STOP or job conflicts return 409; transport failures may return 503. There is no automatic retry.
+
+## Saved default profiles
+
+These endpoints never access the printer. Profiles live in a separate SQLite database under the server data directory; see [saving and moving profiles](../how-to/receipt-profiles.md).
+
+- `GET /api/profiles`: `{default_id, profiles:[{id,name,updated}]}`. An empty `default_id` means built-in startup defaults.
+- `GET /api/profiles/{id}`: `{id,name,document,options,assets}`. Each asset is `{id,name,mime,data}` with base64-encoded bytes. Missing profiles return 404.
+- `POST /api/profiles`: multipart fields `name` (trimmed, 1–80 characters), `document` (receipt JSON), `options` (JSON, default `{}`), `profile_id` (omit/empty to create, existing ID to overwrite), `make_default` (boolean, default true), and repeated `assets` uploads whose filenames are the document's asset IDs. Returns `{id,name}`.
+
+`options` contains `automatic_dates` (footer block IDs, default `[]`) and `finishing` (`cut`, `feed_lines`, `copies`, with the normal print-setting defaults/limits). Captured automatic timestamps are cleared in the saved document. Manual dates/references are retained. Saving with `make_default=false` clears the startup default only if the saved profile was the current default.
+
+Profile documents use the receipt schema but reject camera photo blocks and duplicate section IDs. Upload exactly the referenced header logos; unreadable images and externally referencing SVGs fail validation. Limits: 16 logo assets, 20 MiB per logo, 60 MiB total, 2,000,000 document characters and 32,000 option characters. Invalid data returns 400/422, oversized requests 413, and unknown overwrite IDs 404. Document/options/logo updates are transactional; invalid saves do not replace a previous profile.

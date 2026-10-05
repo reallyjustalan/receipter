@@ -9,7 +9,7 @@ uv run main.py
 
 Open <http://localhost:8022>. Use a single process, without multiple workers: STOP and preview snapshots are process-local. To use another port, run `PORT=8023 uv run main.py`.
 
-After changing source files, stop and restart the server, then refresh the browser. UI assets are deliberately frozen at startup, so live file edits cannot expose controls against an older backend. Export anything needed before refreshing; drafts are not persisted. A stale browser is blocked from printing.
+After changing source files, stop and restart the server, then refresh the browser. UI assets are deliberately frozen at startup, so live file edits cannot expose controls against an older backend. Save reusable defaults with [Profiles](receipt-profiles.md), and export any customer receipt needed before refreshing; camera shots and unsaved drafts are not persisted. A stale browser is blocked from printing.
 
 ## Run tests without paper
 
@@ -19,6 +19,8 @@ node tests/test_editor.js
 node tests/test_output_log.js
 uv run playwright install chromium
 uv run python tests/browser_smoke.py
+uv run python tests/browser_inbox.py
+uv run python tests/browser_profiles.py
 ```
 
 Python tests cover rendering, SVG resource rejection, crop/processing, reorder invariants, totals, canonical scale, API snapshots and the retained transport/STOP guarantees. Node tests cover pure editor helpers, local date formatting, hex formatting and stale output-response handling. The Playwright test starts a temporary server, uses actual rendering endpoints, mocks status/print delivery, checks desktop/mobile interactions and asserts zoom causes no rendering request. It saves screenshots under `/tmp/receipter-*.png` and a temporary server log under `/tmp/receipter-browser-server.log`.

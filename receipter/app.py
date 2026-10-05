@@ -21,12 +21,14 @@ from .receipt import Receipt, render_receipt
 from .printer import ASCII_DIAGNOSTIC, DEFAULT_CHUNK_SIZE, PrintStopped, interrupt, job_token, resume, send_raw, target_status
 
 from .ingest import Inbox, router as inbox_router, storage_path
+from .profiles import Profiles, router as profiles_router
 
 
 @asynccontextmanager
 async def lifespan(app):
     store = Inbox(storage_path())
     app.state.inbox = store
+    app.state.profiles = Profiles(storage_path().parent / 'profiles')
     store.start()
     try:
         yield
@@ -36,12 +38,13 @@ async def lifespan(app):
 
 app = FastAPI(title="Receipter · Photo booth", lifespan=lifespan)
 app.include_router(inbox_router)
+app.include_router(profiles_router)
 MAX_UPLOAD = 20 * 1024 * 1024
 # Freeze assets with this backend. Editing files must not expose new controls
 # against an older running process (which previously ignored the cut fields).
 _ROOT = Path(__file__).parent
 BUILD_ID = hashlib.sha256(b"".join((_ROOT / name).read_bytes() for name in
-    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "background.py", "printer.py", "ingest.py", "inbox.js", "inbox.css"))).hexdigest()[:12]
+    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "background.py", "printer.py", "ingest.py", "inbox.js", "inbox.css", "profiles.py", "profiles.js"))).hexdigest()[:12]
 INDEX_HTML = (_ROOT / "index.html").read_text().replace("__BUILD_ID__", BUILD_ID)
 EDITOR_JS = (_ROOT / "editor.js").read_text()
 STUDIO_JS = (_ROOT / 'studio.js').read_text()
@@ -49,6 +52,7 @@ OUTPUT_LOG_JS = (_ROOT / 'output-log.js').read_text()
 STUDIO_CSS = (_ROOT / 'studio.css').read_text()
 INBOX_JS = (_ROOT / 'inbox.js').read_text()
 INBOX_CSS = (_ROOT / 'inbox.css').read_text()
+PROFILES_JS = (_ROOT / 'profiles.js').read_text()
 # Process-local, bounded, expiring canonical snapshots. Printing never re-renders.
 _snapshots = OrderedDict()
 _render_slots = asyncio.Semaphore(2)
@@ -88,6 +92,11 @@ def output_log_script() -> Response:
 @app.get('/studio.css')
 def studio_styles() -> Response:
     return Response(STUDIO_CSS, media_type='text/css', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/profiles.js')
+def profiles_script() -> Response:
+    return Response(PROFILES_JS, media_type='text/javascript', headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/inbox.js')
