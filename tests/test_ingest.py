@@ -138,12 +138,39 @@ class InboxTests(unittest.TestCase):
                     self.assertLessEqual(max(image.size), 200)
                 self.assertEqual(heic.read_bytes(), original)
 
+    def test_camera_jpg_with_mpo_metadata_is_a_valid_jpeg(self):
+        self.store.configure(str(self.folder), True)
+        stream = io.BytesIO()
+        Image.new('RGB', (40, 60), 'red').save(stream, 'MPO', save_all=True,
+            append_images=[Image.new('RGB', (40, 60), 'blue')])
+        raw = stream.getvalue()
+        self.assertTrue(raw.startswith(b'\xff\xd8\xff'))
+        with Image.open(io.BytesIO(raw)) as source:
+            self.assertEqual(source.format, 'MPO')
+        source_path = self.folder / 'CAMERA.JPG'
+        source_path.write_bytes(raw)
+        self.settle()
+        self.assertEqual(self.store.status()['error'], '')
+        photos = self.store.photos()
+        self.assertEqual(len(photos), 1)
+        photo_id = photos[0]['id']
+        self.assertEqual((self.store.root / f'{photo_id}.jpg').read_bytes(), raw)
+        self.assertEqual(source_path.read_bytes(), raw)
+        with Image.open(self.store.root / f'{photo_id}.working.jpg') as working:
+            self.assertEqual(working.format, 'JPEG')
+            r, g, b = working.getpixel((20, 30))
+            self.assertGreater(r, 200)  # The first/main frame, not the blue secondary picture.
+            self.assertLess(b, 50)
+        self.settle()
+        self.assertEqual(len(self.store.photos()), 1)  # Stable deduplication.
+
     def test_supported_extension_still_requires_jpeg_content(self):
         self.store.configure(str(self.folder), True)
         Image.new('RGB', (40, 60)).save(self.folder / 'not-jpeg.jfif', 'PNG')
         self.settle()
         self.assertEqual(self.store.photos(), [])
-        self.assertIn('Not a JPEG', self.store.status()['error'])
+        self.assertIn('Not a JPEG: detected PNG content', self.store.status()['error'])
+        self.assertIn('filename extension', self.store.status()['error'])
 
     def test_pasted_folder_paths_and_import_while_resuming(self):
         (self.folder / 'existing.jpe').write_bytes(jpeg())

@@ -143,8 +143,11 @@ class Inbox:
                                 raise ValueError('Not a HEIC/HEIF photo')
                         else:
                             with Image.open(io.BytesIO(raw)) as image:
-                                if image.format != 'JPEG':
-                                    raise ValueError('Not a JPEG')
+                                # Some cameras embed multiple JPEG pictures (MPF) in a
+                                # .JPG file; Pillow identifies these JPEG containers as MPO.
+                                if image.format not in ('JPEG', 'MPO'):
+                                    raise ValueError(f'Not a JPEG: detected {image.format or "unknown format"} content. '
+                                                     'The filename extension does not determine the image format.')
                         working = load_source(raw).convert('RGB')
                         thumb = working.copy()
                         thumb.thumbnail((320, 320), Image.Resampling.LANCZOS)
