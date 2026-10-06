@@ -91,6 +91,7 @@ class Footer(TextStyle):
 class Text(TextStyle):
     type: Literal['text'] = 'text'
     text: str = Field('Receipt text', max_length=600)
+    wrap_mode: Literal['character', 'word', 'hyphenate'] = 'character'
 
 
 class Signature(TextStyle):
@@ -108,6 +109,47 @@ Section = Annotated[Header | Photo | Footer | Text | Signature | Spacer, Field(d
 
 class Receipt(Model):
     blocks: list[Section] = Field(min_length=1, max_length=16)
+
+
+def wrap_text(text: str, columns: int, mode: str) -> list[str]:
+    """Wrap normalized paragraphs without changing saved source text.
+
+    Hyphenation is a mechanical continuation marker, not dictionary syllabification.
+    Word wrapping splits overlong words without a marker as a safe fallback.
+    """
+    if columns < 2 or mode not in ('word', 'hyphenate'):
+        raise ValueError('Unsupported text wrapping settings')
+    lines = []
+    for paragraph in normalize(text).split('\n'):
+        pending = paragraph
+        paragraph_lines = []
+        while len(pending) > columns:
+            if mode == 'word':
+                boundary = pending.rfind(' ', 0, columns + 1)
+                if boundary > 0 and pending[:boundary].strip():
+                    paragraph_lines.append(pending[:boundary].rstrip())
+                    pending = pending[boundary:].lstrip(' ')
+                else:
+                    paragraph_lines.append(pending[:columns])
+                    pending = pending[columns:]
+            elif pending[columns - 1] == ' ' or pending[columns] == ' ':
+                paragraph_lines.append(pending[:columns].rstrip())
+                pending = pending[columns:].lstrip(' ')
+            elif pending[columns - 1] == '-':
+                paragraph_lines.append(pending[:columns])
+                pending = pending[columns:]
+            elif pending[columns - 2] == ' ':
+                # Only one column remains: move the word rather than print a bare dash.
+                paragraph_lines.append(pending[:columns - 1].rstrip())
+                pending = pending[columns - 1:].lstrip(' ')
+            else:
+                fragment = pending[:columns - 1]
+                paragraph_lines.append(fragment if fragment.endswith('-') else fragment + '-')
+                pending = pending[columns - 1:]
+        if pending or not paragraph_lines:
+            paragraph_lines.append(pending)
+        lines.extend(paragraph_lines)
+    return lines
 
 
 class TextCanvas:
@@ -165,7 +207,11 @@ class TextCanvas:
                               encode_native_text([text], font_size=self.font_size,
                                                  center=center, padding=False)))
 
-    def line(self, text: str, *, center=False):
+    def line(self, text: str, *, center=False, wrap_mode='character'):
+        if wrap_mode != 'character':
+            for line in wrap_text(text, self.columns, wrap_mode):
+                self._line(line, center)
+            return
         for paragraph in normalize(text).split('\n'):
             pending = ''
             for char in paragraph:
@@ -269,7 +315,7 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
             if block.text:
                 text.line(block.text, center=True)
         elif isinstance(block, Text):
-            text.line(block.text)
+            text.line(block.text, wrap_mode=block.wrap_mode)
         elif isinstance(block, Signature):
             text.y += 72
             text.rule()

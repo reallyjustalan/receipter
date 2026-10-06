@@ -76,7 +76,7 @@ def main():
                     else:
                         route.continue_()
                 page.route('**/api/queue',mock_print)
-                page.on('dialog', lambda dialog: dialog.accept('Guest A') if dialog.type == 'prompt' else dialog.accept())
+                page.on('dialog', lambda dialog: dialog.accept('1' if 'How many copies' in dialog.message else 'Guest A') if dialog.type == 'prompt' else dialog.accept())
                 page.goto(base)
                 expect(page.locator('#preview-state')).to_contain_text('Up to date')
                 expect(page.locator('#zoom')).to_have_value('1')
@@ -312,9 +312,24 @@ def main():
                 expect(page.locator('#message')).to_contain_text('Open Queue to start, confirm or reprint')
                 page.locator('#open-queue').click()
                 expect(page.locator('.queue-job')).to_have_count(1)
-                expect(page.locator('.queue-job strong')).to_contain_text('Guest A · 3 copies · waiting')
-                saved_preview = page.locator('.queue-job img').get_attribute('src')
+                expect(page.locator('.queue-job strong')).to_contain_text('Guest A · 3 copies · Waiting')
+                expect(page.locator('#open-queue')).to_have_attribute('aria-pressed', 'true')
+                expect(page.locator('#workspace')).not_to_be_visible()
+                expect(page.locator('#bottom-bar')).not_to_be_visible()
+                expect(page.locator('#stop')).to_be_visible()
+                page.locator('.queue-proof summary').click()
+                expect(page.locator('.queue-proof')).to_have_attribute('open', '')
+                page.wait_for_timeout(1800)
+                expect(page.locator('.queue-proof')).to_have_attribute('open', '')
+                page.screenshot(path='/tmp/receipter-queue-desktop.png', full_page=True)
+                page.set_viewport_size({'width':390,'height':844})
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Queue tab overflows on mobile'
+                page.screenshot(path='/tmp/receipter-queue-mobile.png', full_page=True)
+                page.set_viewport_size({'width':1440,'height':1100})
+                saved_preview = page.locator('.queue-thumbnail').get_attribute('src')
                 page.locator('#close-queue').click()
+                expect(page.locator('#workspace')).to_have_attribute('data-mode', 'final')
+                expect(page.locator('#bottom-bar')).to_be_visible()
                 page.get_by_role('button',name='01 Receipt layout').click()
                 photo_selector = page.locator('#sections .section-select').filter(has_text='Photo').filter(has_not_text='Header')
                 photo_selector.first.click()
@@ -337,7 +352,7 @@ def main():
                 page.locator('#open-queue').click()
                 page.keyboard.press('Backspace')  # An open dialog shields the draft.
                 expect(page.locator('#photo-count')).to_have_text('1 / 3')
-                expect(page.locator('.queue-job img')).to_have_attribute('src', saved_preview)
+                expect(page.locator('.queue-thumbnail')).to_have_attribute('src', saved_preview)
                 page.locator('#close-queue').click()
                 page.locator('#new-receipt').click()
                 expect(page.locator('#photo-count')).to_have_text('0 / 3')
@@ -353,9 +368,58 @@ def main():
                 expect(page.locator('#preview-state')).to_contain_text('Up to date')
                 page.locator('#open-queue').click()
                 expect(page.locator('.queue-job')).to_have_count(1)
-                expect(page.locator('.queue-job img')).to_have_attribute('src', saved_preview)
+                expect(page.locator('.queue-thumbnail')).to_have_attribute('src', saved_preview)
                 page.get_by_role('button',name='Delete permanently').click()
                 expect(page.locator('.queue-job')).to_have_count(0)
+                # Exercise printing controls on the Queue tab using mocked delivery only.
+                fake_queue = {'paused':True, 'path':'test-only.sqlite3', 'jobs':[
+                    {'id':'mock-job', 'label':'Guest B', 'created':time.time(), 'state':'waiting',
+                     'copies':2, 'send_copies':2, 'detail':'Saved; not sent.'}]}
+                controls = []
+                page.route('**/api/queue', lambda route: route.fulfill(json=fake_queue))
+                page.route('**/api/queue/mock-*/preview', lambda route: route.fulfill(body=photo(), content_type='image/png'))
+                page.unroute('**/api/queue/start')
+                def mock_start(route):
+                    controls.append('start'); fake_queue['paused'] = False
+                    fake_queue['jobs'][0]['state'] = 'sending'
+                    route.fulfill(json={'ok':True})
+                def mock_pause(route):
+                    controls.append('pause'); fake_queue['paused'] = True
+                    route.fulfill(json={'ok':True})
+                def mock_queue_action(route):
+                    job = next(j for j in fake_queue['jobs'] if j['id'] == route.request.url.split('/')[-2])
+                    action = re.search(r'name="action"\r\n\r\n([^\r]+)', route.request.post_data).group(1)
+                    controls.append(action)
+                    if action == 'confirm': job['state'] = 'confirmed'
+                    if action == 'reprint':
+                        count = int(re.search(r'name="copies"\r\n\r\n(\d+)', route.request.post_data).group(1))
+                        fake_queue['paused'] = True
+                        fake_queue['jobs'].append({**job, 'id':'mock-reprint', 'state':'waiting', 'send_copies':count})
+                    route.fulfill(json={'ok':True})
+                page.route('**/api/queue/start', mock_start)
+                page.route('**/api/queue/pause', mock_pause)
+                page.route('**/api/queue/*/action', mock_queue_action)
+                expect(page.locator('.queue-job strong')).to_contain_text('Guest B · 2 copies · Waiting')
+                page.locator('#queue-start').click()
+                expect(page.locator('#queue-status')).to_contain_text('Running')
+                expect(page.locator('.queue-job strong')).to_contain_text('Sending')
+                expect(page.get_by_role('button',name='Delete permanently')).to_be_disabled()
+                page.locator('#queue-pause').click()
+                expect(page.locator('#queue-status')).to_contain_text('Paused')
+                fake_queue['jobs'][0]['state'] = 'awaiting_confirmation'
+                expect(page.get_by_role('button',name='Confirm & next')).to_be_visible()
+                page.get_by_role('button',name='Confirm & next').click()
+                expect(page.locator('.queue-job')).to_have_count(0)
+                page.locator('#queue-history').check()
+                expect(page.locator('.queue-job strong')).to_contain_text('Confirmed')
+                page.get_by_role('button',name='Reprint / remaining copies').click()
+                expect(page.locator('#queue-count')).to_have_text('(1)')
+                page.locator('#queue-history').uncheck()
+                expect(page.locator('.queue-job strong')).to_contain_text('Guest B · 1 copy · Waiting')
+                assert controls == ['start','pause','confirm','reprint'], controls
+                with page.expect_request(lambda request: request.url.endswith('/api/interrupt')):
+                    page.keyboard.press('Escape')
+                expect(page.locator('#print-queue')).to_be_visible()
                 assert not errors, errors
                 browser.close()
                 print('Browser workflow passed: SVG + 3 photos, independent edits, reorder, totals, zoom isolation, durable queue submission, copy counts, automatic local dates, raw-byte log/download and unobstructed floating bars. No USB writes.')

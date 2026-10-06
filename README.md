@@ -10,7 +10,7 @@ uv sync
 uv run main.py
 ```
 
-Open <http://localhost:8022>. Run **one server process**, without multiple workers. Nothing prints until you explicitly start the saved queue. Each sent receipt waits for operator confirmation before the next one sends. Save reusable logos, text, layout and finishing defaults with **Profiles**; the default profile loads after a restart. Camera photos and unsaved receipt edits still live in the browser tab; download the receipt PNG before leaving.
+Open <http://localhost:8022>. Run **one server process**, without multiple workers. Nothing prints until you explicitly start the saved queue. Use the **04 Queue** tab to inspect saved receipts, start/pause delivery, confirm output and reprint; it keeps the editor uncluttered. Each sent receipt waits for operator confirmation before the next one sends. Save reusable logos, text, layout and finishing defaults with **Profiles**; the default profile loads after a restart. Camera photos and unsaved receipt edits still live in the browser tab; download the receipt PNG before leaving.
 
 ## Documentation — Diátaxis
 

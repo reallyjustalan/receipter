@@ -49,6 +49,16 @@ The mask keeps detected people rather than arbitrary foreground objects. Check h
 
 Originals and processed images live in the current browser tab; [saving a profile](receipt-profiles.md) also persists its current logo assets on the server. Input and output are limited to 20 MB each. High-resolution images are automatically downsampled with Pillow to at most 4096 pixels on the longest side; there is no app-level megapixel rejection. JPEG reduced-resolution decoding saves memory before resizing. Pillow’s decompression-bomb safeguards remain enabled. Inference uses a copy bounded to 2048 pixels on its longest side; the mask is resized to the working image’s dimensions.
 
+## Wrap a Text section
+
+Select a **Text** section, then choose **Text wrapping**:
+
+- **Whole words — move to next line:** keep words together when possible. A word wider than the entire line is split without a dash to avoid overflow.
+- **Split words with a dash:** fill a line and append `-` when a word continues on the next line. This is a continuation marker, not dictionary/syllable-aware hyphenation.
+- **Character wrap (existing):** retain the previous behavior, splitting at the line edge without added dashes.
+
+New Text sections use whole-word wrapping; existing sections/profiles without a wrapping setting keep character wrapping. Manual line breaks and blank lines are preserved. Wrapping uses the selected font's available columns (Small 40, Normal 30, Large 15). It never changes your saved source text. Profiles retain the option; queued receipts retain the exact previously rendered lines.
+
 ## Choose a smaller built-in font
 
 Select an itemised footer or text section and set **Text size → Small (Font B)**. This selects the printer's narrower resident Font B; the installed Epson profile lists 56 columns versus Font A's 42. More text and longer item labels fit on a line. The preview is approximate and keeps the existing line pitch, so this is not a half-height font.

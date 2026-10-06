@@ -11,11 +11,13 @@ OpenAPI is served at `/docs`. This reference describes the creator workflow. [Pr
 | `header` | `title` (≤100 chars), `title_font` (`custom` default / `native`), `subtitle` (≤160), optional `asset`, `height` (32–800, default 100), `edits` (default contain) |
 | `photo` | required `asset`, `height` (32–800, default 240), `edits` (default cover), `caption` (≤100) |
 | `footer` | `items` (0–12), `currency` (≤4, default `$`), `date` (≤40), `reference` (≤64), `text` (≤400) |
-| `text` | `text` (≤600) |
+| `text` | `text` (≤600), `wrap_mode` (`character` default / `word` / `hyphenate`) |
 | `signature` | `label` (≤80); renderer adds a blank signing area and rule |
 | `spacer` | `height` (8–200, default 24) |
 
 All blocks except `spacer` accept `font_size`: `small` (narrower resident Font B), `normal` (default Font A) or `large` (Font A double width and height). For headers this affects the subtitle and, when `title_font` is `native`, the title. Custom bitmap titles retain their original appearance. Photo size affects only the caption. Large text wraps sooner and counts toward the receipt height limit.
+
+Text-only `wrap_mode` controls how long paragraphs wrap: `character` retains legacy splitting, `word` moves a word to the next line when it will fit there (overlong words split without markers), and `hyphenate` adds a continuation dash when splitting a word. Hyphenation is mechanical, not dictionary-aware. Manual newlines/blank lines survive. Wrapping happens before preview/native-command capture, uses the selected font's column capacity, and never modifies the stored source text. New browser-created Text sections choose `word`; old API documents and profiles without the field retain `character`.
 
 Heights are layout pixels, not printer rows. Layout width is 400 with 16-pixel horizontal margins. Canonical vertical scale is 0.5. The assembled output must fit 1024 rows; otherwise rendering fails rather than clipping. Receipt previews approximate physical pixel aspect in CSS; see [rendering](../explanation/rendering.md).
 

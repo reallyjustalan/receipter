@@ -2,9 +2,10 @@
 
 1. Prepare a receipt and choose copies, feed and cut in **Printer preview**.
 2. Click **Add to queue**, enter a guest label, and wait for the saved confirmation. This is the durable save point; unsaved editor drafts still live only in the browser tab.
-3. Open **Queue**, then **Start / continue queue**. Close the panel and keep importing/editing while printing runs on the server.
-4. **New receipt** clears camera photo sections but keeps logo, text and other sections. Review guest-specific text. Editing never changes previously saved queue entries.
-5. Inspect every copy and cut. **Confirm & next** moves the current entry to confirmed history and permits the next waiting entry to send if the queue is running. USB acceptance alone does not advance the queue.
+3. Switch to **04 Queue**, then **Start / continue queue**. This full-page print desk shows saved receipt cards, larger previews, delivery states and confirmation/reprint controls. **View full receipt** expands a saved proof. The editor and raw-byte footer are hidden here, but STOP / Esc stays available.
+4. Use **Back to receipt** or an editing tab to keep importing/editing while printing runs on the server. Switching views preserves the current draft and never pauses, starts or resends a job.
+5. **New receipt** clears camera photo sections but keeps logo, text and other sections. Review guest-specific text. Editing never changes previously saved queue entries.
+6. Inspect every copy and cut. **Confirm & next** moves the current entry to confirmed history and permits the next waiting entry to send if the queue is running. USB acceptance alone does not advance the queue.
 
 ## Reprints and interruptions
 
@@ -16,7 +17,7 @@
 
 ## Local persistence and restart
 
-Default database: `~/.receipter/queue/queue.sqlite3` on the Mac running the server. `RECEIPTER_DATA_DIR` overrides `~/.receipter`; use the same directory after restart. Queue displays the actual path.
+Default database: `~/.receipter/queue/queue.sqlite3` on the Mac running the server. `RECEIPTER_DATA_DIR` overrides `~/.receipter`; use the same directory after restart. The Queue tab's **Local storage** details display the actual path.
 
 SQLite transactions commit the preview PNG, copy settings and exact single-copy ESC/POS parts together. FULL synchronous commits and macOS fullfsync are enabled. Stored band boundaries are preserved; reprinting does not re-render artwork or require source photos, browser storage, or temporary preview tokens. Saved receipts are frozen print artifacts, not editable drafts.
 

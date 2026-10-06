@@ -12,7 +12,7 @@
     if (type === 'header') Object.assign(block, {title:'THE PHOTO BOOTH', subtitle:'', asset:null, height:100, edits:defaultEdits(true)});
     if (type === 'photo') Object.assign(block, {asset:null, height:240, caption:'', edits:defaultEdits()});
     if (type === 'footer') Object.assign(block, {items:[{label:'Photo strip', quantity:1, price:'0.00'}], currency:'$', date:'', reference:'', text:'THANK YOU'});
-    if (type === 'text') block.text = 'Receipt text';
+    if (type === 'text') Object.assign(block, {text:'Receipt text', wrap_mode:'word'});
     if (type === 'signature') block.label = 'Signature';
     if (type === 'spacer') block.height = 24;
     return block;
@@ -25,6 +25,7 @@
   const backgroundJobs = new Set();
   let imageTool = 'crop', brushSize = 3, eraseSource = null, eraseDrag = null;
   const automaticDates = new Set();
+  let lastEditingMode = 'layout';
   let mode = 'layout', zoom = Number($('zoom').value), revision = 0, timer, controller, snapshot = null;
   let previewError = '', busy = false, dirty = false, status = null, statusError = '', stoppedLocally = false;
   let finishing = {cut:true, feed_lines:8, copies:1};
@@ -88,17 +89,27 @@
   }
   function setMode(next) {
     if (next === 'image' && !selectedBlock()?.asset) return;
-    mode = next; renderMode(); renderInspector(); paintPreview();
+    const queueSwitch = next === 'queue' || mode === 'queue';
+    if (next === 'queue' && mode !== 'queue') lastEditingMode = mode;
+    mode = next; renderMode();
+    if (mode !== 'queue') { renderInspector(); paintPreview(); }
+    if (queueSwitch) window.scrollTo(0, 0);
   }
   function renderMode() {
+    const queueView = mode === 'queue';
     $('workspace').dataset.mode = mode;
+    $('workspace').hidden = queueView;
+    $('print-queue').hidden = !queueView;
+    $('bottom-bar').hidden = queueView;
+    document.body.classList.toggle('queue-view', queueView);
     document.querySelectorAll('[data-mode]').forEach(button => {
       if (button.tagName === 'BUTTON') button.setAttribute('aria-pressed', button.dataset.mode === mode);
     });
     $('receipt-stage').hidden = mode === 'image';
     $('image-stage').hidden = mode !== 'image';
-    $('stage-title').textContent = {layout:'LIVE RECEIPT', image:'INDIVIDUAL IMAGE / LIVE DOTS', final:'FINAL PRINTER PROOF'}[mode];
-    $('zoom').disabled = mode === 'image';
+    $('stage-title').textContent = {layout:'LIVE RECEIPT', image:'INDIVIDUAL IMAGE / LIVE DOTS', final:'FINAL PRINTER PROOF', queue:'SAVED PRINT QUEUE'}[mode];
+    $('zoom').disabled = mode === 'image' || queueView;
+    window.dispatchEvent(new Event('receipter-mode-changed'));
   }
 
   function field(label, key, value, {type='text', min, max, step, area=false} = {}) {
@@ -165,7 +176,13 @@
         + field('Subheading','subtitle',b.subtitle,{max:160,area:true}) + imageLayout(b);
     }
     if (b.type === 'photo') content += field('Caption (optional)','caption',b.caption) + '<p class="muted">Select a photo, then press Delete or Backspace to remove it (not while typing).</p>' + imageLayout(b);
-    if (b.type === 'text') content += field('Your text','text',b.text,{area:true,max:600});
+    if (b.type === 'text') {
+      content += field('Your text','text',b.text,{area:true,max:600})
+        + select('Text wrapping', 'wrap_mode', b.wrap_mode || 'character',
+          [['word','Whole words — move to next line'], ['hyphenate','Split words with a dash'],
+            ['character','Character wrap (existing)']]).replace('data-edit=', 'data-field=')
+        + '<p class="muted">Manual line breaks are kept. Dash wrapping marks words continued onto the next line, not dictionary syllables. Whole-word mode splits a word only if it is wider than a full line.</p>';
+    }
     if (b.type === 'signature') content += field('Signature label','label',b.label,{max:80}) + '<p class="muted">A blank signing area and rule are printed above this label.</p>';
     if (b.type === 'spacer') content += field('Space (layout pixels)','height',b.height,{type:'number',min:8,max:200});
     if (b.type === 'footer') {
@@ -510,7 +527,7 @@
     if (!['Delete', 'Backspace'].includes(event.key) || event.defaultPrevented || event.repeat
         || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')
-        || document.querySelector('dialog[open]') || $('workspace').inert || mode === 'final'
+        || document.querySelector('dialog[open]') || $('workspace').inert || mode === 'final' || mode === 'queue'
         || cropDrag || eraseDrag || selectedBlock()?.type !== 'photo') return;
     event.preventDefault();
     removeSelectedSection();
@@ -518,6 +535,7 @@
   });
   document.querySelectorAll('button[data-mode]').forEach(button => button.onclick = () => setMode(button.dataset.mode));
   $('back-layout').onclick = () => setMode('layout');
+  $('close-queue').onclick = () => setMode(lastEditingMode);
   $('zoom').onchange = () => { zoom = Number($('zoom').value); paintPreview(); };
   $('refresh-preview').onclick = changed;
   $('new-receipt').onclick = () => {
