@@ -3,12 +3,12 @@
 Profiles keep your logo, text and layout on the server so they survive page reloads and app restarts.
 
 1. Build your default receipt: upload a logo, edit the heading/subheading, footer items and message, text sections, signature label and image adjustments.
-2. Optionally set **Use current date & time**, copies, cut and trailing feed lines.
+2. Optionally set **Use current date & time**, **Use photo count as quantity** on footer items, copies, cut and trailing feed lines.
 3. Open **Profiles** in the top bar.
 4. Choose **New profile**, enter a name and leave **Load this profile by default when opening Receipter** checked if it should be your startup template.
 5. Click **Save current defaults**. Wait for **Saved on this server**.
 
-Camera photo sections are deliberately excluded, even if your receipt contains shots when you save. Logos, other sections and their order are preserved. Automatic-date settings are preserved, but their captured timestamps are cleared and refreshed when the template loads. Manually entered dates/references are saved literally—clear them first if they are specific to one customer.
+Camera photo sections are deliberately excluded, even if your receipt contains shots when you save. Automatic photo-quantity modes are preserved; they count each new receipt's body photos rather than capturing the current count. Logos, other sections and their order are preserved. Automatic-date settings are preserved, but their captured timestamps are cleared and refreshed when the template loads. Manually entered dates/references are saved literally—clear them first if they are specific to one customer.
 
 ## Update or switch profiles
 

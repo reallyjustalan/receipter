@@ -22,6 +22,7 @@ from .printer import ASCII_DIAGNOSTIC, DEFAULT_CHUNK_SIZE, PrintStopped, interru
 
 from .ingest import Inbox, router as inbox_router, storage_path
 from .profiles import Profiles, router as profiles_router
+from .queue import PrintQueue
 
 
 @asynccontextmanager
@@ -29,10 +30,20 @@ async def lifespan(app):
     store = Inbox(storage_path())
     app.state.inbox = store
     app.state.profiles = Profiles(storage_path().parent / 'profiles')
+    app.state.queue = PrintQueue(storage_path().parent / 'queue')
     store.start()
+    worker = asyncio.create_task(queue_worker(app.state.queue))
     try:
         yield
     finally:
+        app.state.queue.pause()
+        if any(job['state'] == 'sending' for job in app.state.queue.listing()['jobs']):
+            interrupt()
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
         await run_in_threadpool(store.close)
 
 
@@ -44,7 +55,7 @@ MAX_UPLOAD = 20 * 1024 * 1024
 # against an older running process (which previously ignored the cut fields).
 _ROOT = Path(__file__).parent
 BUILD_ID = hashlib.sha256(b"".join((_ROOT / name).read_bytes() for name in
-    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "background.py", "printer.py", "ingest.py", "inbox.js", "inbox.css", "profiles.py", "profiles.js", "native_images.py"))).hexdigest()[:12]
+    ("app.py", "index.html", "editor.js", "studio.js", "output-log.js", "studio.css", "receipt.py", "receipt_font.py", "fonts/receipt-bitmap.json", "escpos.py", "imaging.py", "background.py", "printer.py", "ingest.py", "inbox.js", "inbox.css", "profiles.py", "profiles.js", "native_images.py", "queue.py", "queue.js"))).hexdigest()[:12]
 INDEX_HTML = (_ROOT / "index.html").read_text().replace("__BUILD_ID__", BUILD_ID)
 EDITOR_JS = (_ROOT / "editor.js").read_text()
 STUDIO_JS = (_ROOT / 'studio.js').read_text()
@@ -53,6 +64,7 @@ STUDIO_CSS = (_ROOT / 'studio.css').read_text()
 INBOX_JS = (_ROOT / 'inbox.js').read_text()
 INBOX_CSS = (_ROOT / 'inbox.css').read_text()
 PROFILES_JS = (_ROOT / 'profiles.js').read_text()
+QUEUE_JS = (_ROOT / 'queue.js').read_text()
 # Process-local, bounded, expiring canonical snapshots. Printing never re-renders.
 _snapshots = OrderedDict()
 _render_slots = asyncio.Semaphore(2)
@@ -63,7 +75,7 @@ _log = logging.getLogger("uvicorn.error")
 
 @app.middleware("http")
 async def reject_stale_print_controls(request: Request, call_next):
-    if (request.method == "POST" and request.url.path.startswith("/api/print")
+    if (request.method == "POST" and (request.url.path.startswith("/api/print") or request.url.path.startswith('/api/queue'))
             and request.headers.get("X-Receipter-Build", BUILD_ID) != BUILD_ID):
         return JSONResponse({"detail": "Server updated. Refresh the page before printing."}, status_code=409)
     return await call_next(request)
@@ -107,6 +119,98 @@ def inbox_script() -> Response:
 @app.get('/inbox.css')
 def inbox_styles() -> Response:
     return Response(INBOX_CSS, media_type='text/css', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/queue.js')
+def queue_script():
+    return Response(QUEUE_JS, media_type='text/javascript', headers={'Cache-Control': 'no-store'})
+
+
+async def queue_worker(queue):
+    while True:
+        claimed = None
+        try:
+            # Acquire the STOP generation before claiming; Esc invalidates this token.
+            token = job_token()
+            claimed = queue.claim()
+            if claimed:
+                job_id, parts = claimed
+                try:
+                    result = await _send(parts, token)
+                    queue.finish(job_id, True, result['message'])
+                except HTTPException as exc:
+                    queue.finish(job_id, False, str(exc.detail))
+        except PrintStopped:
+            queue.pause()
+        except asyncio.CancelledError:
+            if claimed:
+                queue.finish(claimed[0], False, 'Server stopped. Check paper before reprinting.')
+            raise
+        except Exception:
+            _log.exception('Queue worker paused; no automatic retry')
+            if claimed:
+                queue.finish(claimed[0], False, 'Unexpected failure. Check paper before reprinting.')
+            queue.pause()
+        await asyncio.sleep(0.25)
+
+
+@app.get('/api/queue')
+def queue_listing(request: Request):
+    return request.app.state.queue.listing()
+
+
+@app.post('/api/queue')
+async def queue_add(request: Request, snapshot: str = Form(...), request_id: str = Form(..., max_length=100),
+                    label: str = Form('Receipt', max_length=80), cut: bool = Form(True),
+                    feed_lines: int = Form(8, ge=0, le=20), copies: int = Form(1, ge=1, le=10)):
+    saved = _snapshots.get(snapshot)
+    # Idempotent recovery if the saved response was lost, even after restart.
+    queue = request.app.state.queue
+    with queue.connect() as db:
+        old = db.execute('SELECT id FROM jobs WHERE request_id=?', (request_id,)).fetchone()
+    if old:
+        return {'id': old['id'], 'saved': True}
+    if saved is None or monotonic() - saved[0] > SNAPSHOT_TTL:
+        raise HTTPException(409, 'Preview expired. Refresh preview before saving to queue.')
+    try:
+        parts = await run_in_threadpool(_encode_prepared, saved[1], 1, 16,
+                                       cut=cut, feed_lines=feed_lines, copies=1)
+        job_id = await run_in_threadpool(queue.add, request_id, label.strip() or 'Receipt',
+                                        parts, saved[1].preview_png, copies)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {'id': job_id, 'saved': True}
+
+
+@app.post('/api/queue/start')
+def queue_start(request: Request):
+    _token()  # Resume printer separately after STOP; this never clears the latch.
+    request.app.state.queue.pause(False)
+    return {'ok': True}
+
+
+@app.post('/api/queue/pause')
+def queue_pause(request: Request):
+    request.app.state.queue.pause()
+    return {'ok': True, 'message': 'Paused after current transfer. Use STOP to interrupt it.'}
+
+
+@app.post('/api/queue/{job_id}/action')
+def queue_action(request: Request, job_id: str, action: str = Form(...),
+                 copies: int | None = Form(None, ge=1, le=10)):
+    try:
+        request.app.state.queue.action(job_id, action, copies)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {'ok': True}
+
+
+@app.get('/api/queue/{job_id}/preview')
+def queue_preview(request: Request, job_id: str):
+    png = request.app.state.queue.preview(job_id)
+    if png is None:
+        raise HTTPException(404, 'Receipt not found')
+    return Response(png, media_type='image/png', headers={'Cache-Control': 'no-store'})
 
 
 @app.post('/api/remove-background')
@@ -199,7 +303,9 @@ def status() -> dict:
 
 @app.post("/api/interrupt")
 async def stop_printing() -> dict:
-    return interrupt()
+    result = interrupt()
+    app.state.queue.pause()
+    return result
 
 
 @app.post("/api/resume")

@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const {defaultEdits, moveBlock, receiptTotal, formatReceiptDate} = ReceiptEditor;
+  const {defaultEdits, moveBlock, receiptTotal, itemQuantity, formatReceiptDate} = ReceiptEditor;
   const build = document.querySelector('meta[name="receipter-build"]').content;
   const uid = () => crypto.randomUUID();
   const escapeHTML = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
@@ -30,6 +30,7 @@
   let finishing = {cut:true, feed_lines:8, copies:1};
   let uploadTarget = null;
   const selectedBlock = () => documentState.blocks.find(b => b.id === selected);
+  const photoCount = () => documentState.blocks.filter(b => b.type === 'photo').length;
   const tell = message => {
     const entry = document.createElement('div');
     entry.textContent = `[${new Date().toLocaleTimeString('en-GB')}] ${message}`;
@@ -120,7 +121,7 @@
     const panel = $('inspector-content');
     const b = selectedBlock();
     if (mode === 'final') {
-      panel.innerHTML = `<p class="eyebrow">PRINT SETTINGS</p><h2>The final receipt</h2><p class="muted">The receipt on the left previews the saved artwork and native text. Nothing is re-rendered when you print; built-in printer lettering is approximate on screen.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Print one receipt →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Custom titles and artwork print as images. Built-in titles and other text use the printer’s font and selected size; preview glyph shapes and alignment may differ. Ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
+      panel.innerHTML = `<p class="eyebrow">PRINT SETTINGS</p><h2>The final receipt</h2><p class="muted">The receipt on the left previews the saved artwork and native text. Add to queue saves this exact receipt on the Mac. You can edit the next one while it prints; built-in printer lettering is approximate on screen.</p><div class="proof-note">400 columns · 0.5 canonical scale<br>Black + red ribbon · 76 mm paper<br>View zoom never changes print data.<br>Paper clearance below is added after the artwork.</div><hr><h3>Print & finish</h3><label>Copies (1–10)<input id="copies" type="number" min="1" max="10" step="1" value="${finishing.copies}"></label><p class="muted">Each copy gets the selected feed/cut. STOP cancels all remaining unsent copies but keeps the saved receipt for reprinting.</p><label class="check"><input id="cut" type="checkbox" ${finishing.cut?'checked':''}>Partial cut after printing</label><label>Trailing feed (lines)<input id="feed-lines" type="number" min="${finishing.cut?8:0}" max="20" value="${finishing.feed_lines}"></label><p class="muted">With cutting, allow at least 8 lines (~34 mm) for the print head to clear. A partial cut leaves a small bridge.</p><button id="print-receipt" class="primary wide" disabled>Add to queue →</button><p id="print-reasons" role="status"></p><hr><p class="muted">Custom titles and artwork print as images. Built-in titles and other text use the printer’s font and selected size; preview glyph shapes and alignment may differ. Ribbon shade and pin spacing may vary. USB delivery does not confirm physical output.</p><button id="back-editing" class="wide">← Keep editing</button>`;
       $('cut').onchange = () => { finishing.cut = $('cut').checked; if (finishing.cut) finishing.feed_lines = Math.max(8, finishing.feed_lines); renderInspector(); };
       $('feed-lines').oninput = () => { finishing.feed_lines = Number($('feed-lines').value); updatePrint(); };
       $('copies').oninput = () => { finishing.copies = Number($('copies').value); updatePrint(); };
@@ -163,20 +164,20 @@
           [['custom','Custom bitmap font'], ['native','Built-in printer font']]).replace('data-edit=', 'data-field=')
         + field('Subheading','subtitle',b.subtitle,{max:160,area:true}) + imageLayout(b);
     }
-    if (b.type === 'photo') content += field('Caption (optional)','caption',b.caption) + imageLayout(b);
+    if (b.type === 'photo') content += field('Caption (optional)','caption',b.caption) + '<p class="muted">Select a photo, then press Delete or Backspace to remove it (not while typing).</p>' + imageLayout(b);
     if (b.type === 'text') content += field('Your text','text',b.text,{area:true,max:600});
     if (b.type === 'signature') content += field('Signature label','label',b.label,{max:80}) + '<p class="muted">A blank signing area and rule are printed above this label.</p>';
     if (b.type === 'spacer') content += field('Space (layout pixels)','height',b.height,{type:'number',min:8,max:200});
     if (b.type === 'footer') {
       content += '<p class="muted">Line items, totals and receipt details.</p>' + field('Currency symbol','currency',b.currency,{max:4});
-      content += b.items.map((item,i) => `<div class="item-row"><label>Item ${i+1}<input data-item="${i}" data-key="label" value="${escapeHTML(item.label)}" maxlength="64"></label><div class="row"><label>Qty<input data-item="${i}" data-key="quantity" type="number" min="1" max="999" value="${item.quantity}"></label><label>Unit price<input data-item="${i}" data-key="price" type="number" min="0" max="999999.99" step="0.01" value="${escapeHTML(item.price)}"></label></div><button class="remove" data-remove-item="${i}">Remove item</button></div>`).join('');
-      content += `<button id="add-item" class="wide" ${b.items.length>=12?'disabled':''}>＋ Add item</button><div class="total"><span>TOTAL</span><strong id="total">${escapeHTML(b.currency)}${receiptTotal(b.items).toFixed(2)}</strong></div><hr>` + field('Date / time (optional)','date',b.date,{max:40}) + `<label class="check"><input id="automatic-date" type="checkbox" ${automaticDates.has(b.id)?'checked':''}>Use current date & time</label><p class="muted">Local time: DD/MM/YYYY HH:mm. Captured on each preview refresh; all copies use the previewed timestamp.</p>` + field('Reference (optional)','reference',b.reference,{max:64}) + field('Footer message (optional)','text',b.text,{area:true,max:400});
+      content += b.items.map((item,i) => `<div class="item-row"><label>Item ${i+1}<input data-item="${i}" data-key="label" value="${escapeHTML(item.label)}" maxlength="64"></label><div class="row"><label>Qty<input data-item="${i}" data-key="quantity" type="number" min="${item.quantity_mode==='photos'?0:1}" max="999" value="${itemQuantity(item, photoCount())}" ${item.quantity_mode==='photos'?'disabled':''}></label><label>Unit price<input data-item="${i}" data-key="price" type="number" min="0" max="999999.99" step="0.01" value="${escapeHTML(item.price)}"></label></div><label class="check"><input type="checkbox" data-photo-quantity="${i}" ${item.quantity_mode==='photos'?'checked':''}>Use photo count as quantity</label><button class="remove" data-remove-item="${i}">Remove item</button></div>`).join('');
+      content += `<p class="muted">Automatic quantity counts body photos, not logos or print copies. With no photos, that item is omitted from the printed footer. Save a profile to reuse this setting.</p><button id="add-item" class="wide" ${b.items.length>=12?'disabled':''}>＋ Add item</button><div class="total"><span>TOTAL</span><strong id="total">${escapeHTML(b.currency)}${receiptTotal(b.items, photoCount()).toFixed(2)}</strong></div><hr>` + field('Date / time (optional)','date',b.date,{max:40}) + `<label class="check"><input id="automatic-date" type="checkbox" ${automaticDates.has(b.id)?'checked':''}>Use current date & time</label><p class="muted">Local time: DD/MM/YYYY HH:mm. Captured on each preview refresh; all copies use the previewed timestamp.</p>` + field('Reference (optional)','reference',b.reference,{max:64}) + field('Footer message (optional)','text',b.text,{area:true,max:400});
     }
     if (b.type !== 'spacer') {
       const label = b.type === 'header' ? 'Native text size (subtitle & built-in title)' : 'Text size';
       content += select(label, 'font_size', b.font_size || 'normal',
-        [['normal','Normal'], ['large','Large (double width & height)']]).replace('data-edit=', 'data-field=');
-      content += '<p class="muted">Uses the printer’s built-in font. Large text wraps sooner; preview lettering is approximate. ' + (b.type === 'header' ? 'Custom titles keep their original appearance.' : '') + '</p>';
+        [['small','Small (Font B)'], ['normal','Normal'], ['large','Large (double width & height)']]).replace('data-edit=', 'data-field=');
+      content += '<p class="muted">Small uses narrower Font B; Normal and Large use Font A. Large text wraps sooner; preview lettering is approximate. ' + (b.type === 'header' ? 'Custom titles keep their original appearance.' : '') + '</p>';
     }
     content += '<hr><button id="delete-section" class="remove">Remove this section</button>';
     panel.innerHTML = content;
@@ -197,18 +198,27 @@
       b.items[Number(input.dataset.item)][input.dataset.key] = input.dataset.key==='quantity'?Number(input.value):input.value;
       updateTotal(b); changed();
     });
+    panel.querySelectorAll('[data-photo-quantity]').forEach(input => input.onchange = () => {
+      b.items[Number(input.dataset.photoQuantity)].quantity_mode = input.checked ? 'photos' : 'manual';
+      renderInspector(); changed();
+    });
     panel.querySelectorAll('[data-remove-item]').forEach(button => button.onclick = () => { b.items.splice(Number(button.dataset.removeItem),1); renderInspector(); changed(); });
     if ($('add-item')) $('add-item').onclick = () => { b.items.push({label:'New item',quantity:1,price:'0.00'}); renderInspector(); changed(); };
     if ($('replace-asset')) $('replace-asset').onclick = () => { uploadTarget = b.id; $('asset-upload').click(); };
     if ($('edit-image')) $('edit-image').onclick = () => setMode('image');
     if ($('remove-logo')) $('remove-logo').onclick = () => { assets.delete(b.asset); originalImages.delete(b.asset); b.asset = null; renderInspector(); renderList(); changed(); };
-    $('delete-section').onclick = () => {
-      documentState.blocks = documentState.blocks.filter(block => block.id !== b.id);
-      if (b.asset) { assets.delete(b.asset); originalImages.delete(b.asset); }
-      automaticDates.delete(b.id);
-      selected = documentState.blocks[0]?.id;
-      renderList(); renderInspector(); changed();
-    };
+    $('delete-section').onclick = removeSelectedSection;
+  }
+  function removeSelectedSection() {
+    const block = selectedBlock();
+    if (!block) return;
+    documentState.blocks = documentState.blocks.filter(b => b.id !== block.id);
+    if (block.asset) { assets.delete(block.asset); originalImages.delete(block.asset); }
+    automaticDates.delete(block.id);
+    selected = documentState.blocks[0]?.id;
+    cropDrag = null; eraseDrag = null; eraseSource = null;
+    if (mode === 'image') mode = 'layout';
+    renderList(); renderMode(); renderInspector(); changed();
   }
   async function removePeopleBackground(block) {
     const id = block.asset, file = assets.get(id);
@@ -235,7 +245,13 @@
       renderInspector(); updatePrint();
     }
   }
-  function updateTotal(b) { if ($('total')) $('total').textContent = `${b.currency}${receiptTotal(b.items).toFixed(2)}`; }
+  function updateTotal(b) {
+    if ($('total')) $('total').textContent = `${b.currency}${receiptTotal(b.items, photoCount()).toFixed(2)}`;
+    document.querySelectorAll('[data-item][data-key="quantity"]').forEach(input => {
+      const item = b.items[Number(input.dataset.item)];
+      if (item.quantity_mode === 'photos') input.value = itemQuantity(item, photoCount());
+    });
+  }
   function updateCropControls() {
     const contain = selectedBlock()?.edits.fit === 'contain';
     document.querySelectorAll('#crop-controls input').forEach(input => input.disabled = contain);
@@ -244,6 +260,7 @@
     window.dispatchEvent(new Event('receipter-receipt-changed'));
     dirty = true;
     revision++;
+    if (selectedBlock()?.type === 'footer') updateTotal(selectedBlock());
     snapshot = null;
     previewError = '';
     controller?.abort();
@@ -415,9 +432,9 @@
     const invalidFeed = !Number.isInteger(finishing.feed_lines) || finishing.feed_lines < (finishing.cut?8:0) || finishing.feed_lines > 20;
     const invalidCopies = !Number.isInteger(finishing.copies) || finishing.copies < 1 || finishing.copies > 10;
     const reasons = ReceiptEditor.printBlockReasons({
-      statusKnown: !!status, statusError, buildMatches: status?.build_id === build,
-      connected: status?.connected, stopped: stoppedLocally || status?.stopped,
-      busy, serverBusy: status?.printing, hasReceipt: documentState.blocks.length > 0,
+      statusKnown: !!status, statusError: status ? '' : statusError, buildMatches: status?.build_id === build,
+      connected: true, stopped: false,
+      busy, serverBusy: false, hasReceipt: documentState.blocks.length > 0,
       previewReady: !!snapshot && snapshot.revision === revision, previewError,
       validationError: [invalidFeed ? 'Enter a valid trailing feed: '+(finishing.cut?'8':'0')+'–20 lines.' : '',
         invalidCopies ? 'Choose a whole number of copies from 1 to 10.' : ''].filter(Boolean).join('\n'),
@@ -431,9 +448,9 @@
     outputLog.update(snapshot, finishing);
     if (!$('print-receipt')) return;
     const reasons = printReasons();
-    $('print-receipt').textContent = finishing.copies > 1 ? `Print ${finishing.copies} copies →` : 'Print one receipt →';
+    $('print-receipt').textContent = `Add ${finishing.copies} ${finishing.copies === 1 ? 'copy' : 'copies'} to queue →`;
     $('print-receipt').disabled = reasons.length > 0;
-    for (const id of ['copies', 'cut', 'feed-lines']) $(id).disabled = busy || !!status?.printing;
+    for (const id of ['copies', 'cut', 'feed-lines']) $(id).disabled = busy;
     $('print-receipt').title = reasons.join('\n');
     $('print-reasons').textContent = reasons.join('\n');
   }
@@ -452,36 +469,24 @@
   async function printReceipt() {
     if (printReasons().length) return;
     const form = new FormData();
-    const printingRevision = revision;
-    const sentPlan = outputLog.plan;
+    const label = prompt('Queue receipt label (guest name or number):', 'Receipt');
+    if (label === null) return;
+    // Stable across a lost response: repeating this save cannot create duplicates.
+    form.append('request_id', `${snapshot.token}:${finishing.cut}:${finishing.feed_lines}:${finishing.copies}`);
+    form.append('label', label.slice(0, 80));
     form.append('snapshot', snapshot.token);
     form.append('cut', finishing.cut);
     form.append('feed_lines', finishing.feed_lines);
     form.append('copies', finishing.copies);
     busy = true; updatePrint();
-    outputLog.mark('Sending', sentPlan);
-    tell(`SUBMIT ${sentPlan.bytes.length} bytes · SHA-256 ${sentPlan.sha256}`);
-    tell(`Sending ${finishing.copies} ${finishing.copies === 1 ? 'receipt' : 'copies'} as one job. STOP cancels unsent copies; power off to stop buffered printing.`);
     try {
-      const result = await responseJSON(await fetch('/api/print-receipt', {method:'POST',headers:{'X-Receipter-Build':build},body:form}));
-      if (result.job_sha256 && result.job_sha256 !== sentPlan.sha256) {
-        outputLog.mark('Failed / delivery uncertain', sentPlan);
-        tell(`WARNING: job ${result.job_id} output fingerprint differs from the inspected bytes. Check the printer. Expected ${sentPlan.sha256}; reported ${result.job_sha256}.`);
-      } else {
-        outputLog.mark('USB accepted', sentPlan);
-        tell(`USB ACCEPTED · job ${result.job_id} · ${result.bytes} bytes · SHA-256 ${result.job_sha256 || 'not reported'}\n${result.message}`);
-      }
+      const result = await responseJSON(await fetch('/api/queue', {method:'POST',headers:{'X-Receipter-Build':build},body:form}));
+      tell(`Saved receipt ${result.id} on this Mac. Open Queue to start, confirm or reprint. You can keep editing now.`);
+      await window.receipterQueueRefresh?.();
     } catch(error) {
-      outputLog.mark('Failed / delivery uncertain', sentPlan);
-      tell(`Print failed: ${error.message}\nSome copies may already have printed. No automatic retry. Check the printer before another attempt.`);
-    }
-    finally {
+      tell(`Queue save could not be confirmed: ${error.message}. Check Queue before leaving; retrying this same preview/settings will not duplicate it.`);
+    } finally {
       busy = false;
-      // Tokens are single-use. Never re-enable an uncertain job automatically.
-      if (revision === printingRevision) {
-        snapshot = null;
-        previewError = 'Refresh preview before printing another copy.';
-      }
       updatePrint(); await refreshStatus();
     }
   }
@@ -500,11 +505,33 @@
     catch(error) { tell(error.message); }
     await refreshStatus();
   };
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') $('stop').click(); });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { $('stop').click(); return; }
+    if (!['Delete', 'Backspace'].includes(event.key) || event.defaultPrevented || event.repeat
+        || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')
+        || document.querySelector('dialog[open]') || $('workspace').inert || mode === 'final'
+        || cropDrag || eraseDrag || selectedBlock()?.type !== 'photo') return;
+    event.preventDefault();
+    removeSelectedSection();
+    tell('Photo removed from this draft. Saved queue receipts are unchanged.');
+  });
   document.querySelectorAll('button[data-mode]').forEach(button => button.onclick = () => setMode(button.dataset.mode));
   $('back-layout').onclick = () => setMode('layout');
   $('zoom').onchange = () => { zoom = Number($('zoom').value); paintPreview(); };
   $('refresh-preview').onclick = changed;
+  $('new-receipt').onclick = () => {
+    if (busy || backgroundJobs.size) { tell('Wait for saving or image processing to finish.'); return; }
+    if (!confirm('Start a new receipt? Current unsaved photos will be cleared. Saved queue receipts are unchanged. Text, logo and layout defaults are kept.')) return;
+    for (const block of documentState.blocks.filter(b => b.type === 'photo')) {
+      assets.delete(block.asset); originalImages.delete(block.asset);
+    }
+    documentState.blocks = documentState.blocks.filter(b => b.type !== 'photo');
+    selected = documentState.blocks[0]?.id;
+    mode = 'layout';
+    renderMode(); renderList(); renderInspector(); changed();
+    tell('Ready for the next guest. Review any guest-specific text before saving.');
+  };
   $('sections').onclick = event => {
     const button = event.target.closest('button');
     if (!button) return;
@@ -684,7 +711,7 @@
   };
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
   function checkProfileIdle() {
-    if (busy || status?.printing || backgroundJobs.size) throw new Error('Wait for printing or image processing to finish before saving or loading a profile.');
+    if (busy || backgroundJobs.size) throw new Error('Wait for queue saving or image processing to finish before saving or loading a profile.');
   }
   window.receipterProfileSnapshot = () => {
     checkProfileIdle();

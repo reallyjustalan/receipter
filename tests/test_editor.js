@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const {printBlockReasons, moveBlock, receiptTotal, defaultEdits, formatReceiptDate, hexDump} = require('../receipter/editor.js');
+const {printBlockReasons, moveBlock, receiptTotal, itemQuantity, defaultEdits, formatReceiptDate, hexDump} = require('../receipter/editor.js');
 
 const ready = {statusKnown: true, buildMatches: true, connected: true, stopped: false,
   busy: false, serverBusy: false, hasReceipt: true, previewReady: true,
@@ -42,6 +42,14 @@ assert.equal(defaultEdits(true).fit, 'contain');
 assert.equal(defaultEdits().fit, 'cover');
 assert.equal(receiptTotal([{quantity: 3, price: '0.10'}, {quantity: 1, price: '0.20'}]), .50);
 assert.equal(receiptTotal([]), 0);
+const autoItem = {quantity: 7, quantity_mode: 'photos', price: '0.10'};
+const manualItem = {quantity: 2, price: '1.25'};
+for (const photos of [0, 1, 2, 3]) {
+  assert.equal(itemQuantity(autoItem, photos), photos);
+  assert.equal(itemQuantity(manualItem, photos), 2);
+  assert.equal(receiptTotal([autoItem, manualItem], photos), (photos * 10 + 250) / 100);
+}
+assert.equal(autoItem.quantity, 7, 'Automatic counts must not overwrite the manual fallback');
 console.log('Stable section reordering, independent edits and cent-accurate totals passed.');
 assert.equal(formatReceiptDate(new Date(2026, 8, 8, 4, 5)), '08/09/2026 04:05');
 assert.equal(formatReceiptDate(new Date(2026, 11, 31, 23, 59)), '31/12/2026 23:59');

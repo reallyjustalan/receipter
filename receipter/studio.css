@@ -1,4 +1,10 @@
 /* Intentionally minimal styling for the receipt editor. */
+#print-queue { width: min(850px, 95vw); max-height: 85vh; overflow: auto; }
+.queue-job { padding: 12px; border-top: 1px solid #bbb; min-height: 130px; }
+.queue-job img { width: 75px; max-height: 160px; object-fit: contain; object-position: top; float: left; margin-right: 12px; }
+.queue-job button { margin: 4px; }
+.queue-job::after { content: ''; display: block; clear: both; }
+#queue-status { overflow-wrap: anywhere; }
 :root { font-family: system-ui, sans-serif; color: #222; background: #fafafa; --top-bar-height: 130px; --bottom-bar-height: 240px; }
 html { scroll-padding-top: calc(var(--top-bar-height) + 12px); scroll-padding-bottom: calc(var(--bottom-bar-height) + 12px); }
 * { box-sizing: border-box; }

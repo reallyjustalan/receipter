@@ -25,8 +25,11 @@
     result.splice(Math.max(0, Math.min(index, result.length)), 0, block);
     return result;
   }
-  function receiptTotal(items) {
-    return items.reduce((sum, item) => sum + Math.round(Number(item.price) * 100) * Number(item.quantity), 0) / 100;
+  function itemQuantity(item, photoCount = 0) {
+    return item.quantity_mode === 'photos' ? photoCount : Number(item.quantity);
+  }
+  function receiptTotal(items, photoCount = 0) {
+    return items.reduce((sum, item) => sum + Math.round(Number(item.price) * 100) * itemQuantity(item, photoCount), 0) / 100;
   }
   function defaultEdits(logo = false) {
     return {rotation: 0, flip_horizontal: false, flip_vertical: false,
@@ -49,7 +52,7 @@
     }
     return lines.join('\n');
   }
-  const api = {printBlockReasons, moveBlock, receiptTotal, defaultEdits, formatReceiptDate, hexDump};
+  const api = {printBlockReasons, moveBlock, receiptTotal, itemQuantity, defaultEdits, formatReceiptDate, hexDump};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ReceiptEditor = api;
 })(globalThis);

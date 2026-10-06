@@ -107,6 +107,65 @@ class NativeTextTests(unittest.TestCase):
             pages = [raw[i + 2] for i in range(len(raw) - 2) if raw[i:i+2] == b'\x1bt']
             self.assertTrue(all(page == 0 for page in pages))
 
+    def test_small_uses_font_b_without_double_size_and_resets_font(self):
+        raw = encode_native_text(['Small text'], font_size='small')
+        self.assertIn(b'\x1bM\x01', raw)  # ESC M 1 selects resident Font B.
+        self.assertIn(b'\x1b!\x00', raw)  # Explicit normal (not doubled) size.
+        self.assertNotIn(b'\x1b!0', raw)
+        self.assertIn(b'\x1b3\x1a', raw)  # Existing 26 feed units / 13 preview rows.
+        self.assertLess(raw.index(b'\x1bM\x01'), raw.index(b'Small text\n'))
+        self.assertGreater(raw.rindex(b'\x1bM\x00'), raw.index(b'Small text\n'))
+
+    def test_small_wraps_at_40_columns_with_same_line_pitch(self):
+        normal, _ = render_receipt(Receipt(blocks=[Text(id='t', text='A' * 40)]), {})
+        small, _ = render_receipt(Receipt(blocks=[Text(id='t', text='A' * 40, font_size='small')]), {})
+        self.assertEqual(len(normal.native_text), 2)
+        self.assertEqual(len(small.native_text), 1)
+        self.assertLess(small.height, normal.height)
+        self.assertEqual(small.native_text[0][1] - small.native_text[0][0], 13)
+        wrapped, _ = render_receipt(Receipt(blocks=[Text(id='t', text='A' * 41, font_size='small')]), {})
+        self.assertEqual(len(wrapped.native_text), 2)
+        self.assertIn(b'A' * 40 + b'\n', wrapped.native_text[0][2])
+        self.assertIn(b'A\n', wrapped.native_text[1][2])
+
+    def test_small_footer_fits_more_items_on_one_line_and_preserves_totals(self):
+        footer = Footer(id='f', font_size='small', items=[Item(label='A' * 25, price='1.25')],
+                        date='08/09/2026', reference='Guest', text='THANK YOU')
+        restored = Receipt.model_validate_json(Receipt(blocks=[footer]).model_dump_json())
+        self.assertEqual(restored.blocks[0].font_size, 'small')
+        small, _ = render_receipt(restored, {})
+        normal, _ = render_receipt(Receipt(blocks=[footer.model_copy(update={'font_size':'normal'})]), {})
+        self.assertLess(small.height, normal.height)
+        item_run = small.native_text[0][2]
+        self.assertIn(b'1 x ' + b'A' * 25, item_run)
+        self.assertIn(b'$1.25\n', item_run)
+        self.assertEqual(len(item_run.split(b'1 x ', 1)[1].split(b'\n', 1)[0]) + 4, 40)
+        for _, _, raw in small.native_text:
+            self.assertIn(b'\x1bM\x01', raw)
+        stream = b''.join(_encode_prepared(small, 1, 16))
+        for text in [b'TOTAL', b'$1.25', b'08/09/2026', b'REF: Guest', b'THANK YOU']:
+            self.assertIn(text, stream)
+
+    def test_small_does_not_shrink_custom_header_artwork(self):
+        normal, _ = render_receipt(Receipt(blocks=[Header(id='h', title='ARTWORK')]), {})
+        small, _ = render_receipt(Receipt(blocks=[Header(id='h', title='ARTWORK', font_size='small')]), {})
+        self.assertEqual(normal.preview_png, small.preview_png)
+        small_native, _ = render_receipt(Receipt(blocks=[Header(id='h', title='TITLE',
+                                                               subtitle='Subtitle', title_font='native', font_size='small')]), {})
+        self.assertEqual(len(small_native.native_text), 2)
+        for _, _, raw in small_native.native_text:
+            self.assertIn(b'\x1bM\x01', raw)
+            self.assertIn(b'\x1ba\x01', raw)
+
+    def test_small_selection_does_not_leak_to_next_normal_or_large_section(self):
+        prepared, _ = render_receipt(Receipt(blocks=[Text(id='s', text='SMALL', font_size='small'),
+            Text(id='n', text='NORMAL'), Text(id='l', text='LARGE', font_size='large')]), {})
+        small, normal, large = [run[2] for run in prepared.native_text]
+        self.assertIn(b'\x1bM\x01', small)
+        self.assertNotIn(b'\x1bM\x01', normal)
+        self.assertNotIn(b'\x1bM\x01', large)
+        self.assertIn(b'\x1b!0', large)
+
     def test_controls_rejected(self):
         for text in ['bad\x1b@', 'bad\x00', 'bad\r', 'bad\x7f']:
             with self.assertRaises(ValueError):

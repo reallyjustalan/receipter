@@ -7,9 +7,9 @@ uv sync
 uv run main.py
 ```
 
-Open <http://localhost:8022>. Use a single process, without multiple workers: STOP and preview snapshots are process-local. To use another port, run `PORT=8023 uv run main.py`.
+Open <http://localhost:8022>. Use a single process, without multiple workers: STOP and preview snapshots are process-local; the saved print queue has one worker. To use another port, run `PORT=8023 uv run main.py`.
 
-After changing source files, stop and restart the server, then refresh the browser. UI assets are deliberately frozen at startup, so live file edits cannot expose controls against an older backend. Save reusable defaults with [Profiles](receipt-profiles.md), and export any customer receipt needed before refreshing; camera shots and unsaved drafts are not persisted. A stale browser is blocked from printing.
+After changing source files, stop and restart the server, then refresh the browser. UI assets are deliberately frozen at startup, so live file edits cannot expose controls against an older backend. Save reusable defaults with [Profiles](receipt-profiles.md), and save customer receipts with **Add to queue** before refreshing; saved jobs persist on this Mac, while unsaved editor drafts are not persisted. See [saved queue operation and recovery](print-queue.md). A stale browser is blocked from printing.
 
 ## Run tests without paper
 
@@ -41,18 +41,17 @@ curl -X POST http://localhost:8022/api/resume
 
 STOP also latches after short writes/timeouts. It cannot stop other applications’ jobs and resets on server restart. Never assume an error means no paper was printed; inspect the printer before another attempt.
 
-## Resolve a blocked Print button
+## Resolve a blocked Add to queue button
 
 Read the reason under the **Print** button:
 
-- Connect/power on the printer for disconnection. Editing still works offline.
+- Saving to queue and editing work while the printer is offline, stopped or sending another job. Connect/power on before starting delivery.
 - Refresh the browser for build mismatch.
 - Wait for the latest preview and matching encoded output; fix validation errors or choose **Refresh preview** if either stalls. The floating output panel reports preparation, submission and USB acceptance separately; it does not imply that prepared bytes have been sent.
 - Shorten images/text/spacing for a receipt over 1024 rows.
 - Enter 8–20 trailing feed lines with cut, or 0–20 without.
 - Choose an integer copy count from 1 to 10. After a failed batch, inspect and count the actual receipts before choosing how many to print next; partial delivery is not automatically retried.
-- Wait for an active job, or STOP it if necessary.
-- Power-cycle then Resume after STOP.
+- Queue saving waits only for another save, not another print. For delivery, power-cycle then Resume after STOP, then explicitly continue the queue.
 - Refresh the preview after a print attempt, token expiry or cache eviction. Do this deliberately, not as an automatic resend after an error.
 
 ## Diagnose garbled image output

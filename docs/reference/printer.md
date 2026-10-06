@@ -16,7 +16,7 @@ Defaults: vendor `0x04b8`, product `0x0202` (EPSON UB-U03II adapter), interface 
 - No USB reset or SET_CONFIGURATION; exclusive USB access throughout the job. Status requests use cached detection during printing instead of competing handles.
 - A 2 MiB host-memory guard, not a receive-buffer-sized job cap.
 - Cancellation checks between writes. Short writes/timeouts latch STOP; uncertain data is never automatically resent.
-- No pending-job queue. A concurrent job is rejected.
+- The transport rejects concurrent delivery. The durable application queue sends one job at a time and waits for operator confirmation; direct legacy endpoints do not enqueue.
 - Image limits: 400 columns in mode 1, 200 in mode 0, 1024 rows, at most 2048 total band-feed units.
 - Image bands select black/red and overprint before advancing. Finishing restores black/default spacing, adds trailing LF lines, then optionally sends `GS V 1` (`1d 56 01`) in its own write.
 - With cutting, 8–20 trailing lines; without cutting, 0–20. Eight default-spaced lines are approximately 34 mm of clearance. Partial cuts leave a paper bridge.
@@ -45,7 +45,7 @@ Slow diagnostic writes retain 500 ms timeouts. Tiny-image encoding matches pytho
 
 Legacy image endpoints accept multipart `image`, `width`, `two_color`, `dither`, `rotation`, `flip_horizontal`, `flip_vertical`, `brightness`, `contrast`, `black_ink`, `red_ink`. `vertical_scale` remains a form field for compatibility but **must be 0.5**; arbitrary preview scales now return 400. Legacy printing additionally accepts `density_mode`, `line_spacing`, `cut`, `feed_lines`. The block-based creator uses the fixed canonical receipt API instead.
 
-Calibration accepts `width` (default 200), `density_mode` (default 1), `line_spacing` (default 16), `cut` (default true), `feed_lines` (default 8). Every print endpoint requires an explicit POST. [Receipt snapshot endpoints](receipt-api.md) are the normal creator workflow.
+Calibration accepts `width` (default 200), `density_mode` (default 1), `line_spacing` (default 16), `cut` (default true), `feed_lines` (default 8). Every print endpoint requires an explicit POST. [Receipt preview and saved queue endpoints](receipt-api.md) are the normal creator workflow.
 
 ## Build and job reporting
 

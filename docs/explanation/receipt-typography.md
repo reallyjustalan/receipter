@@ -10,13 +10,15 @@ The built-in letters live in the printer's firmware. The installed python-escpos
 
 The previous renderer used Pillow's proportional default font at 18 layout pixels, then scaled it vertically by 0.5 and thresholded it. Thin antialiased strokes could disappear during that conversion. Rendering a larger browser preview could not recover the lost dots.
 
-Titles and preview text use bundled fixed-cell bitmap glyphs pasted into the canonical indexed dot map. Other printed text now uses the printer's resident font through python-escpos, including footer totals and details. Normal and Large sizes use native normal and double-width/double-height modes; preview glyphs scale with nearest-neighbor sampling. Rules remain one-row raster artwork. Amounts use fixed-column spacing rather than proportional-font spacing.
+Titles and preview text use bundled fixed-cell bitmap glyphs pasted into the canonical indexed dot map. Other printed text now uses the printer's resident font through python-escpos, including footer totals and details. Normal and Large sizes use Font A in native normal and double-width/double-height modes. Small selects Font B through python-escpos (`ESC M 1`) without doubling; the installed TM-U220/TM-U220B profiles list 56 columns for B versus 42 for A. Preview glyphs scale with nearest-neighbor sampling. Rules remain one-row raster artwork. Amounts use fixed-column spacing rather than proportional-font spacing.
 
 The default view is 100% rather than 85%, avoiding initial fractional downscaling. At 100%, a canonical dot occupies one CSS pixel horizontally and two vertically, following the existing graphics-mode preview aspect. Smaller view zooms necessarily discard some screen detail, but never change the receipt's actual dots.
 
 ## Approximation, not Epson ROM lettering
 
 The bundled glyphs are public-domain **font8x8** basic Latin and Latin-1 bitmaps, placed in a 9×9 cell with a 12-column advance and 13-row line pitch. This gives 33 cells across a 400-dot canvas, or 30 within the receipt's margins. The eight-row glyph shapes and chosen spacing are an explicit approximation to fixed-cell impact lettering; they are **not a verified copy of Epson's nine-row glyphs**. [Attribution and source revision](../../receipter/fonts/NOTICE.md) are bundled with the data.
+
+Small previews compress the glyphs to a 7×9 cell with a 9-column advance and the same 13-row line pitch (40 usable columns within the margins). It is a narrower font, not a new half-height mode. Normal and Large preview metrics and the default selection remain unchanged; custom bitmap titles never shrink with this setting. Font and text-size modes reset after each native run so Small cannot leak into subsequent sections.
 
 The preview shows these approximate rasterized letters. Printing sends title and artwork dots unchanged, but replaces all other text rows with saved firmware-text commands. The snapshot stores both representations; inspection and printing use the same mixed-output encoder. Native glyph shape, width and alignment can differ from the screen. The UI labels this approximation explicitly; physical validation is still needed.
 

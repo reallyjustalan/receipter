@@ -20,12 +20,13 @@ def encode_native_text(lines: list[str], *, font_size='normal', center=False,
     from escpos.printer import Dummy
     from .profile import printer_profile
 
-    if font_size not in ('normal', 'large'):
+    if font_size not in ('small', 'normal', 'large'):
         raise ValueError('Unsupported native font size')
     large = font_size == 'large'
     printer = Dummy(profile=printer_profile())
-    printer.set(align='center' if center else 'left', font='a',
-                double_width=large, double_height=large, bold=False, underline=0)
+    printer.set(align='center' if center else 'left', font='b' if font_size == 'small' else 'a',
+                normal_textsize=font_size == 'small', double_width=large, double_height=large,
+                bold=False, underline=0)
     printer._raw(ESC + b'r\x00')
     if padding:
         printer._raw(ESC + b'J\x08')

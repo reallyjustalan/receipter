@@ -12,7 +12,7 @@
   <div id="top-bar">
   <header class="app-header">
     <a class="brand" href="/" aria-label="Receipter home">receipter</a>
-    <div class="printer-tools"><button id="open-profiles" disabled>Profiles</button><button id="open-inbox">Photo inbox</button><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
+    <div class="printer-tools"><button id="open-profiles" disabled>Profiles</button><button id="open-inbox">Photo inbox</button><button id="open-queue">Queue</button><button id="new-receipt">New receipt</button><span id="connection" role="status">Checking printer…</span><button id="stop" class="stop">STOP <kbd>Esc</kbd></button><button id="resume" hidden>Resume</button></div>
   </header>
   <nav class="workspace-nav" aria-label="Editing workspace">
     <div class="modes"><button data-mode="layout" aria-pressed="true">01 <span>Receipt layout</span></button><button data-mode="image" aria-pressed="false" disabled>02 <span>Image editor</span></button><button data-mode="final" aria-pressed="false">03 <span>Printer preview</span></button></div>
@@ -84,6 +84,14 @@
     <p id="profile-status" role="status" aria-live="polite"></p>
     <p>Saving an existing profile replaces its defaults. Profiles are stored on this server, not just in this browser. Loading replaces the current receipt.</p>
   </dialog>
+  <dialog id="print-queue" aria-labelledby="queue-title">
+    <div class="inbox-heading"><h2 id="queue-title">Saved print queue</h2><button id="close-queue">Close</button></div>
+    <p>Receipts stay saved until you explicitly delete them. Confirm only after checking the paper. Editing never changes a saved receipt.</p>
+    <button id="queue-start">Start / continue queue</button><button id="queue-pause">Pause after current transfer</button>
+    <label><input id="queue-history" type="checkbox"> Show confirmed history</label>
+    <p id="queue-status" role="status"></p><div id="queue-jobs"></div>
+  </dialog>
+  <script src="/queue.js"></script>
   <script src="/profiles.js"></script>
   <script src="/studio.js"></script>
   <script src="/inbox.js"></script>

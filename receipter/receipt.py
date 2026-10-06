@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
 from .imaging import BLACK, CANONICAL_SCALE, PreparedImage, _palette, _preview, prepare_image
-from .receipt_font import ADVANCE, LINE_ROWS, draw_text, normalize, text_width
+from .receipt_font import ADVANCE, LINE_ROWS, draw_text, glyph, normalize, text_width
 
 WIDTH = 400
 MARGIN = 16
@@ -51,7 +51,7 @@ class Block(Model):
 
 
 class TextStyle(Block):
-    font_size: Literal['normal', 'large'] = 'normal'
+    font_size: Literal['small', 'normal', 'large'] = 'normal'
 
 
 class Photo(TextStyle):
@@ -75,6 +75,7 @@ class Header(TextStyle):
 class Item(Model):
     label: str = Field(min_length=1, max_length=64)
     quantity: int = Field(1, ge=1, le=999)
+    quantity_mode: Literal['manual', 'photos'] = 'manual'
     price: Decimal = Field(Decimal('0.00'), ge=0, max_digits=8, decimal_places=2)
 
 
@@ -124,8 +125,31 @@ class TextCanvas:
     def scale(self):
         return 2 if self.native and self.font_size == 'large' else 1
 
+    @property
+    def small(self):
+        return self.native and self.font_size == 'small'
+
+    @property
+    def advance(self):
+        # Profile Font B has 56 columns versus Font A's 42 (3/4 width).
+        # Keep the existing A metrics; this remains an approximate ROM preview.
+        return 9 if self.small else ADVANCE * self.scale
+
+    @property
+    def columns(self):
+        return self.image.width // self.advance
+
+    def width(self, text):
+        if self.small:
+            return max(0, (len(text) - 1) * self.advance + 7)
+        return text_width(text) * self.scale
+
     def glyphs(self, x, row, text):
-        if self.scale == 1:
+        if self.small:
+            for char in text:
+                self.image.paste(BLACK, (x, row), glyph(char).resize((7, 9), Image.Resampling.NEAREST))
+                x += self.advance
+        elif self.scale == 1:
             draw_text(self.image, x, row, text, BLACK)
         elif text:
             glyphs = Image.new('P', (text_width(text), LINE_ROWS), 0)
@@ -145,14 +169,15 @@ class TextCanvas:
         for paragraph in normalize(text).split('\n'):
             pending = ''
             for char in paragraph:
-                if text_width(pending + char) * self.scale > self.image.width:
+                if (self.width(pending + char) > self.image.width
+                        or (self.small and len(pending + char) > self.columns)):
                     self._line(pending, center)
                     pending = ''
                 pending += char
             self._line(pending, center)
 
     def _line(self, text, center):
-        x = (self.image.width - text_width(text) * self.scale) // 2 if center else 0
+        x = (self.image.width - self.width(text)) // 2 if center else 0
         row = round(self.y * CANONICAL_SCALE)
         self.glyphs(x, row, text)
         self.record(text, row, center)
@@ -169,10 +194,10 @@ class TextCanvas:
     def amount(self, label, amount):
         # Reserve a separate row if the label cannot fit alongside the amount.
         label, amount = normalize(label), normalize(amount)
-        aw = text_width(amount) * self.scale
+        aw = self.width(amount)
         if '\n' in amount or aw > self.image.width:
             raise ValueError('Receipt amount is too wide or contains a newline')
-        columns = self.image.width // (ADVANCE * self.scale)
+        columns = self.columns
         if ('\n' in label or len(label) + len(amount) + 2 > columns):
             self.line(label)
             label = ''
@@ -196,7 +221,8 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
     ids = [block.id for block in document.blocks]
     if len(set(ids)) != len(ids):
         raise ValueError('Section IDs must be unique')
-    if sum(block.type == 'photo' for block in document.blocks) > 3:
+    photo_count = sum(block.type == 'photo' for block in document.blocks)
+    if photo_count > 3:
         raise ValueError('A receipt supports up to three photos')
     pieces = []
     metadata = []
@@ -226,10 +252,13 @@ def render_receipt(document: Receipt, assets: dict[str, bytes]) -> tuple[Prepare
             text.rule()
             total = Decimal('0.00')
             for item in block.items:
-                cost = item.price * item.quantity
+                quantity = photo_count if item.quantity_mode == 'photos' else item.quantity
+                if quantity == 0:
+                    continue  # Automatic photo items are omitted when there are no photos.
+                cost = item.price * quantity
                 total += cost
                 # ASCII avoids printer-dependent code-page mappings for U+00D7.
-                text.amount(f'{item.quantity} x {item.label}', f'{block.currency}{cost:.2f}')
+                text.amount(f'{quantity} x {item.label}', f'{block.currency}{cost:.2f}')
             text.rule()
             text.amount('TOTAL', f'{block.currency}{total:.2f}')
             text.rule()

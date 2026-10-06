@@ -15,13 +15,13 @@ OpenAPI is served at `/docs`. This reference describes the creator workflow. [Pr
 | `signature` | `label` (≤80); renderer adds a blank signing area and rule |
 | `spacer` | `height` (8–200, default 24) |
 
-All blocks except `spacer` accept `font_size`: `normal` (default) or `large` (double width and height). For headers this affects the subtitle and, when `title_font` is `native`, the title. Custom bitmap titles retain their original appearance. Photo size affects only the caption. Large text wraps sooner and counts toward the receipt height limit.
+All blocks except `spacer` accept `font_size`: `small` (narrower resident Font B), `normal` (default Font A) or `large` (Font A double width and height). For headers this affects the subtitle and, when `title_font` is `native`, the title. Custom bitmap titles retain their original appearance. Photo size affects only the caption. Large text wraps sooner and counts toward the receipt height limit.
 
 Heights are layout pixels, not printer rows. Layout width is 400 with 16-pixel horizontal margins. Canonical vertical scale is 0.5. The assembled output must fit 1024 rows; otherwise rendering fails rather than clipping. Receipt previews approximate physical pixel aspect in CSS; see [rendering](../explanation/rendering.md).
 
-Titles default to bundled bitmap lettering; set `title_font: "native"` to use the built-in printer font instead. All other text prints through python-escpos using the printer's resident Font A, with native double-size mode for `large`. The preview uses approximate bitmap glyphs with 12-dot advance and 13-row line pitch (both doubled for large text); physical glyph width and alignment may differ. Printable ASCII, Latin-1 and euro are supported; common smart punctuation is normalized, and unsupported characters return 400. See [typography reference and rationale](../explanation/receipt-typography.md).
+Titles default to bundled bitmap lettering; set `title_font: "native"` to use the built-in printer font instead. All other text prints through python-escpos using the printer's resident Font A for `normal`/`large`, or Font B for `small`. Large uses native double-size mode. The preview uses approximate bitmap glyphs with 12-dot advance and 13-row line pitch (both doubled for large text); Small uses 9-dot advance and the same 13-row pitch, fitting 40 characters within the margins; physical glyph width and alignment may differ. Printable ASCII, Latin-1 and euro are supported; common smart punctuation is normalized, and unsupported characters return 400. See [typography reference and rationale](../explanation/receipt-typography.md).
 
-An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. Printed item labels use the ASCII separator `x` (e.g. `2 x Photo strip`) to avoid device-dependent multiplication-symbol code pages. No taxes or server-side date generation are implied. The UI's per-footer automatic-date option resolves the browser's local clock to a `DD/MM/YYYY HH:mm` string before sending the preview document. The `date` API field remains a plain string; there is no `automatic_date` document field. Printing never recalculates it.
+An item is `{"label":"Photo strip","quantity":2,"price":"1.50"}`. Optional `quantity_mode` is `manual` (default) or `photos`. In `photos` mode, the renderer uses the receipt's count of body `photo` sections (0–3), ignoring logos and copies; with zero photos that line is omitted and contributes zero. The stored `quantity` remains a valid 1–999 manual fallback, restored when automatic mode is disabled. Profiles preserve the mode without saving camera photos, and preview/queue snapshots freeze the resolved text and totals. Labels have 1–64 characters, integer quantities are 1–999 and prices are non-negative decimals with at most eight digits, including at most two fractional digits. Line cost is `quantity × price`; total is the decimal sum. Printed item labels use the ASCII separator `x` (e.g. `2 x Photo strip`) to avoid device-dependent multiplication-symbol code pages. No taxes or server-side date generation are implied. The UI's per-footer automatic-date option resolves the browser's local clock to a `DD/MM/YYYY HH:mm` string before sending the preview document. The `date` API field remains a plain string; there is no `automatic_date` document field. Printing never recalculates it.
 
 ### Image edits
 
@@ -90,7 +90,22 @@ Uses the **same encoder** as the print route on the stored canonical image. Resp
 
 Inspection does not acquire a printer job token, open USB, consume the snapshot, extend its expiry or send data. It works while the printer is offline or STOPPED. Missing/expired snapshots return 409. Invalid settings return 400 or 422. Browser formatting/pagination does not modify the bytes. The app freezes `/output-log.js` with its other assets at startup.
 
-## `POST /api/print-receipt`
+## Durable queue API
+
+The creator uses these endpoints after preview/output inspection. All queue POSTs accept `X-Receipter-Build`; a supplied stale build is rejected.
+
+- `POST /api/queue`: form `snapshot`, `request_id` (up to 100 characters; stable retry key), `label` (up to 80 characters), `cut`, `feed_lines`, `copies`. Saves a PNG and single-copy encoded parts transactionally without consuming the snapshot. Returns `{id, saved: true}` only after commit. An existing request ID returns its existing job, even if its preview expired. Saved parts are repeated according to the requested copies at delivery.
+- `GET /api/queue`: `{paused, path, jobs}` including confirmed history. Jobs have `id`, `label`, `created`, `state`, `copies`, `send_copies`, `detail`. States: `waiting`, `sending`, `awaiting_confirmation`, `interrupted`, `confirmed`.
+- `POST /api/queue/start`: enables sequential sending; never clears STOP. Each sent job blocks advancement until explicit confirmation.
+- `POST /api/queue/pause`: pauses after current host transfer. STOP also pauses, while cancelling unsent data.
+- `POST /api/queue/{id}/action`: form `action` (`confirm`, `reprint`, `delete`), optional `copies` (1–10) for reprint. Confirmation requires the current sent/interrupted job and retains history. Reprint pauses delivery; confirmed-history reprints create new entries. Delete is permanent. Actions during sending return 409.
+- `GET /api/queue/{id}/preview`: saved PNG, or 404.
+
+Queue starts paused after every server startup. An interrupted send is retained as uncertain, never automatically retried. Saved queue data is independent of the process-local preview cache. See [operator workflow and local storage](../how-to/print-queue.md).
+
+## `POST /api/print-receipt` (direct compatibility endpoint)
+
+This retained endpoint bypasses the durable queue; the browser creator no longer uses it.
 
 Multipart/form fields: `snapshot` (preview token), `cut` (boolean, default true), `feed_lines` (integer, default 8), `copies` (integer 1–10, default 1).
 

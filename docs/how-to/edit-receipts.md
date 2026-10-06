@@ -4,7 +4,7 @@
 
 Use **Receipt layout** to add headers/logos, photos, footers, text, signatures or spaces. Select a section in the left-hand list or on the receipt to edit it. Drag list entries, or use their up/down buttons (also keyboard accessible). Every section type can move; ordering is not hard-coded. Newly uploaded photos are initially placed before the first footer as a convenience.
 
-A receipt allows at most three photos and sixteen sections. Use **Remove this section** to delete a block. To replace an image without losing its adjustments, use **Replace image**. To remove only a header’s logo, use **Remove logo**.
+A receipt allows at most three photos and sixteen sections. Use **Remove this section** to delete a block. For a photo, click it on the receipt or in the section list, then press **Delete** or **Backspace** (the Mac Delete key). This removes the selected photo section from the draft and updates automatic footer quantities. The shortcut is disabled while typing, inside dialogs, during crop/erase drags, and in Printer preview; it never changes saved queue receipts or removes non-photo sections. To replace an image without losing its adjustments, use **Replace image**. To remove only a header’s logo, use **Remove logo**.
 
 ## Prepare an SVG logo
 
@@ -49,9 +49,21 @@ The mask keeps detected people rather than arbitrary foreground objects. Check h
 
 Originals and processed images live in the current browser tab; [saving a profile](receipt-profiles.md) also persists its current logo assets on the server. Input and output are limited to 20 MB each. High-resolution images are automatically downsampled with Pillow to at most 4096 pixels on the longest side; there is no app-level megapixel rejection. JPEG reduced-resolution decoding saves memory before resizing. Pillow’s decompression-bomb safeguards remain enabled. Inference uses a copy bounded to 2048 pixels on its longest side; the mask is resized to the working image’s dimensions.
 
+## Choose a smaller built-in font
+
+Select an itemised footer or text section and set **Text size → Small (Font B)**. This selects the printer's narrower resident Font B; the installed Epson profile lists 56 columns versus Font A's 42. More text and longer item labels fit on a line. The preview is approximate and keeps the existing line pitch, so this is not a half-height font.
+
+**Normal** remains the default and **Large** keeps its double-width/double-height behavior. Small also applies to captions, signatures and native header text; custom bitmap titles and images are unchanged. Profiles preserve the selection, and saved queue receipts keep their original encoded font choices.
+
 ## Create an itemised footer
 
 Add an **Itemised footer**. Enter labels, quantities and non-negative unit prices with up to two decimal places. Add or remove rows. The total is calculated using decimal arithmetic on the server; it is not a free-text total. Long labels wrap rather than overwriting right-aligned costs.
+
+### Automatically count photos
+
+For a footer item, enable **Use photo count as quantity**. Its quantity becomes the number of body photo sections (0–3), and its cost and the footer total update as photos are added or removed. Logos and print copies do not count. With zero body photos, the automatic item is omitted from the printed footer and contributes zero; manual items are unchanged. Disable the checkbox to return to its previous manual quantity.
+
+Save **Profiles → Save current defaults** to make this automatic behavior part of a reusable template. Unlike a captured quantity, the mode is saved: each new receipt counts its own photos. Quantities resolve when the preview is rendered, so adding to queue freezes the matching totals and reprints never change them.
 
 Date, reference and footer text are optional. Empty fields are omitted. Add a separate **Signature** section wherever a blank signing area is needed.
 
@@ -64,12 +76,12 @@ The time is captured on each receipt preview refresh, including refreshes caused
 ## Print multiple copies
 
 1. Open **Printer preview** and wait for an up-to-date receipt.
-2. Set **Copies (1–10)** to the number you want; the default is one. The button updates to **Print N copies**. Changing the count does not regenerate the artwork.
+2. Set **Copies (1–10)** to the number you want; the default is one. The button updates to **Add N copies to queue**. Changing the count does not regenerate the artwork.
 3. Choose trailing feed and partial cut. These settings apply **after every copy**. Without cutting, copies remain on one continuous strip; use feed lines if you want space between them.
-4. Click **Print N copies** once. All copies use the exact same snapshot and run sequentially as one job. No other job can be inserted between them.
-5. Inspect the paper. USB acceptance does not verify the number of physical receipts or cuts. Use STOP / Esc to cancel remaining unsent copies; power off to stop buffered data.
+4. Click **Add N copies to queue**. Wait for confirmation that it was saved on the Mac, then open **Queue** and explicitly **Start / continue queue**. All copies run sequentially as one job.
+5. Inspect the paper, then **Confirm & next**. USB acceptance does not verify physical receipts or cuts. Use STOP / Esc to cancel remaining unsent copies; power off to stop buffered data. Saved jobs stay available.
 
-After success or failure, explicitly **Refresh preview** before starting another batch. Do not automatically retry a failed batch: some copies may already have printed. Count the actual receipts first and choose only the remaining quantity.
+For a failed batch, count actual receipts and use **Reprint / remaining copies** to choose how many to resend. There are no automatic retries. See [queue persistence and recovery](print-queue.md).
 
 ## Inspect printer output
 
@@ -77,8 +89,8 @@ The floating bottom toolbar keeps **Refresh preview**, **Download PNG** and **Do
 
 - The byte view shows hexadecimal offsets, 16 hexadecimal bytes per row and a printable ASCII column. Non-printable bytes appear as dots only in the ASCII column; their actual hex values are retained.
 - Use the arrows to page through the complete stream, 1024 bytes at a time. The full job is available as `receipt.escpos` through **Download raw**.
-- `Prepared — not sent` means encoded candidate bytes, not printer activity. `Sending` means a request was submitted; it is not per-byte device acknowledgement. `USB accepted` reports completed host transfer, not physical output. A failure leaves delivery uncertain.
-- Timestamped event entries report byte counts, part counts and SHA-256 fingerprints. The submission fingerprint is compared with the server's returned job fingerprint. Old entries are retained up to 40 events; the byte pane/download holds the most recently inspected stream, not a permanent job archive.
+- `Prepared — not sent` describes the editor's candidate bytes, not queue activity. Check Queue for sending, awaiting confirmation or interrupted states. USB acceptance does not verify physical output.
+- Timestamped event entries report editor preparation and durable queue saves. Old entries are retained up to 40 events; the byte pane/download holds the most recently inspected stream. Queue is the permanent receipt archive until explicit deletion.
 - During edits, the prior byte view is marked stale until matching output is ready. Printing is blocked while output inspection is pending or failed. The raw download may still represent the last inspected stream; use the state label to distinguish it from current output.
 
 Receipt text is rasterized, so most raw bytes are graphics payload, not readable text strings. Do not treat incidental ESC bytes inside those payloads as separate commands.

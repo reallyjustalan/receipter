@@ -53,15 +53,16 @@ def main():
                         if status_mode[0] == 'server-error':
                             route.fulfill(status=500, content_type='text/plain', body='Internal Server Error')
                         else:
-                            route.fulfill(json={'connected': False, 'stopped': False, 'printing': False,
+                            route.fulfill(json={'connected': False, 'stopped': False, 'printing': True,
+                                                'build_id': page.locator('meta[name="receipter-build"]').get_attribute('content'),
                                                 'detection_error': 'USB backend missing. Run brew install libusb.'})
                     page.route('**/api/status', mock_status)
                     page.goto(base)
                     page.locator('[data-mode="final"]').click()
                     expect(page.locator('#print-reasons')).to_contain_text('non-JSON response (HTTP 500)')
                     status_mode[0] = 'usb-error'
-                    expect(page.locator('#print-reasons')).to_contain_text('brew install libusb', timeout=10000)
-                    expect(page.locator('#print-receipt')).to_be_disabled()
+                    expect(page.locator('#print-receipt')).to_be_enabled(timeout=10000)
+                    expect(page.locator('#connection')).to_have_attribute('title', 'USB backend missing. Run brew install libusb.')
                     page.locator('#open-inbox').click()
                     expect(page.locator('#inbox-status')).to_contain_text('Choose a camera folder')
                     expect(page.locator('#inbox-enabled')).to_be_checked()
